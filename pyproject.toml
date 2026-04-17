@@ -1,0 +1,19 @@
+[project]
+name = "commissioning-platform"
+version = "0.0.1"
+requires-python = ">=3.11"
+description = "Commissioning Platform — automated device discovery, testing, and attestation."
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Dataclasses like TestRequest/TestResult are domain types, not test cases.
+python_classes = "!Test*"
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+]
+
+[tool.setuptools]
+packages = ["src"]

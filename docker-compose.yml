@@ -1,0 +1,132 @@
+# Module 0 — Docker Compose stack for the Commissioning Platform.
+# See contracts spec §1.2. Seven containers on the cx-net bridge network.
+# Platform container uses network_mode: host to reach facility devices.
+
+name: commissioning-platform
+
+networks:
+  cx-net:
+    driver: bridge
+
+volumes:
+  netbox-media:
+  netbox-pgdata:
+  influx-data:
+  minio-data:
+  cx-wal:
+
+services:
+  netbox-postgres:
+    image: postgres:16
+    networks: [cx-net]
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: ${NETBOX_DB_PASSWORD:-netbox}
+    volumes:
+      - netbox-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netbox"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  netbox-redis:
+    image: redis:7-alpine
+    networks: [cx-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  netbox:
+    image: netboxcommunity/netbox:v4.1
+    networks: [cx-net]
+    ports:
+      - "8000:8080"
+    depends_on:
+      netbox-postgres:
+        condition: service_healthy
+      netbox-redis:
+        condition: service_healthy
+    environment:
+      DB_HOST: netbox-postgres
+      DB_NAME: netbox
+      DB_USER: netbox
+      DB_PASSWORD: ${NETBOX_DB_PASSWORD:-netbox}
+      REDIS_HOST: netbox-redis
+      REDIS_PASSWORD: ""
+      SECRET_KEY: ${NETBOX_SECRET_KEY:-change-me-in-prod-minimum-50-chars-long-please}
+      SUPERUSER_NAME: admin
+      SUPERUSER_EMAIL: admin@localhost
+      SUPERUSER_PASSWORD: ${NETBOX_ADMIN_PASSWORD:-admin}
+      SUPERUSER_API_TOKEN: ${NETBOX_API_TOKEN:-0123456789abcdef0123456789abcdef01234567}
+    volumes:
+      - netbox-media:/opt/netbox/netbox/media
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/status/"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  influxdb:
+    image: influxdb:2.7
+    networks: [cx-net]
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-admin-password-change-me}
+      DOCKER_INFLUXDB_INIT_ORG: commissioning
+      DOCKER_INFLUXDB_INIT_BUCKET: commissioning
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_ADMIN_TOKEN:-dev-influx-token-change-me}
+    volumes:
+      - influx-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    networks: [cx-net]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  platform:
+    build: .
+    # network_mode: host lets the platform reach facility devices on the LAN.
+    # Infrastructure containers are then reached via localhost:<published-port>.
+    network_mode: host
+    depends_on:
+      netbox:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config:ro
+      - cx-wal:/app/data/wal
+    environment:
+      PLATFORM_CONFIG: /app/config/platform.yml
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/v1/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
