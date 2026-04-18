@@ -1,7 +1,4 @@
-# Commissioning Platform
 
-Automated device discovery, testing, and cryptographic attestation for industrial
-and data-center equipment. See `docs/` for the full specifications.
 
 ## Specs
 
