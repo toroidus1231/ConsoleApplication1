@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Local PDF text extracts (reproducible from PDFs)
+spec.txt
+contracts.txt
+impl.txt
+

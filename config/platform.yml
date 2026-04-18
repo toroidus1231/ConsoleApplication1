@@ -1,0 +1,57 @@
+# Commissioning Platform config — contracts spec §1.4.
+# This is the example/dev config. In production, tokens and passwords come from
+# a secrets manager and file permissions on this file should be 600.
+
+facility:
+  name: DC1-Ashburn
+  scan_subnets:
+    - 10.0.0.0/24
+    - 10.0.1.0/24
+
+netbox:
+  url: http://localhost:8000
+  token: 0123456789abcdef0123456789abcdef01234567
+
+influxdb:
+  url: http://localhost:8086
+  token: dev-influx-token-change-me
+  org: commissioning
+  bucket: commissioning
+
+minio:
+  endpoint: localhost:9000
+  access_key: minioadmin
+  secret_key: minioadmin
+  bucket: attestation
+  retention_days: 2555  # 7 years
+
+workers:
+  max_concurrent_polls: 50
+
+orchestrator:
+  max_concurrent_tests: 5
+
+api:
+  port: 8080
+  key: dev-api-key-change-me
+  cors_origins:
+    - http://localhost:8080
+    - http://localhost:5173  # Vite dev server
+
+ntp:
+  server: pool.ntp.org
+
+logging:
+  level: INFO
+  format: json
+
+external_apis:
+  genetec:
+    url: https://genetec.example.com
+    token: ""
+  servicenow:
+    url: https://servicenow.example.com
+    token: ""
+  maximo:
+    url: https://maximo.example.com
+    token: ""

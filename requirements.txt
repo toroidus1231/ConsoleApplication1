@@ -1,0 +1,32 @@
+# Commissioning Platform — Python dependencies (pinned per implementation-guide.pdf)
+
+# Protocol clients
+pymodbus==3.7.4
+BAC0==24.3.25
+pysnmp-lextudio==6.1.2
+pynvml==12.560.30
+
+# Storage clients
+influxdb-client[async]==1.44.0
+minio==7.2.12
+
+# Web + API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sse-starlette==2.1.3
+httpx==0.27.2
+python-multipart==0.0.18
+
+# Ingestion + LLM
+ifcopenshell==0.8.1
+anthropic==0.39.0
+pdfplumber==0.11.4
+
+# Misc
+pyyaml==6.0.2
+aiofiles==24.1.0
+reportlab==4.2.5
+
+# Test dependencies
+pytest==8.3.3
+pytest-asyncio==0.24.0
