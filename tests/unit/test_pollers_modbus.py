@@ -7,7 +7,7 @@ This avoids needing a live simulator in unit tests.
 
 import pytest
 
-from src.pollers.modbus import poll_device
+from src.pollers.modbus import poll_device, write_register
 from src.types import DeviceInfo
 
 
@@ -31,13 +31,16 @@ class FakeClient:
     return FakeResult(error=True).
     """
 
-    def __init__(self, holding=None, input_=None, connect_ok=True, read_exc=None):
+    def __init__(self, holding=None, input_=None, connect_ok=True, read_exc=None, write_exc=None, write_error=False):
         self.holding = holding or {}
         self.input = input_ or {}
         self.connect_ok = connect_ok
         self.read_exc = read_exc
+        self.write_exc = write_exc
+        self.write_error = write_error
         self.closed = False
         self.calls: list[tuple] = []
+        self.writes: list[tuple] = []
 
     async def connect(self):
         return self.connect_ok
@@ -62,6 +65,18 @@ class FakeClient:
             return FakeResult(error=True)
         regs = self.input[address]
         return FakeResult(registers=regs[:count])
+
+    async def write_register(self, address, value, slave):
+        self.writes.append(("w6", address, value, slave))
+        if self.write_exc:
+            raise self.write_exc
+        return FakeResult(error=self.write_error)
+
+    async def write_registers(self, address, values, slave):
+        self.writes.append(("w16", address, list(values), slave))
+        if self.write_exc:
+            raise self.write_exc
+        return FakeResult(error=self.write_error)
 
 
 def _device(registers, connection=None):
@@ -217,6 +232,69 @@ async def test_read_exception_captured_as_per_register_error():
 
     assert result.success is False
     assert "TimeoutError" in result.errors["x"]
+
+
+# --- Writes ------------------------------------------------------------------
+
+
+async def test_write_register_fc6_happy_path():
+    device = _device([])
+    fake = FakeClient()
+
+    ok, err = await write_register(device, address=1234, value=1, function_code=6, client=fake)
+
+    assert (ok, err) == (True, None)
+    assert fake.writes == [("w6", 1234, 1, 1)]
+
+
+async def test_write_register_fc16_happy_path():
+    device = _device([])
+    fake = FakeClient()
+
+    ok, err = await write_register(device, address=1234, value=42, function_code=16, client=fake)
+
+    assert ok is True
+    assert fake.writes == [("w16", 1234, [42], 1)]
+
+
+async def test_write_register_unsupported_function_code():
+    device = _device([])
+    fake = FakeClient()
+
+    ok, err = await write_register(device, address=1, value=1, function_code=99, client=fake)
+
+    assert ok is False
+    assert "Unsupported write function code" in err
+
+
+async def test_write_register_connect_failure():
+    device = _device([])
+    fake = FakeClient(connect_ok=False)
+
+    ok, err = await write_register(device, address=1, value=1, client=fake)
+
+    assert ok is False
+    assert "Failed to connect" in err
+
+
+async def test_write_register_modbus_error_response():
+    device = _device([])
+    fake = FakeClient(write_error=True)
+
+    ok, err = await write_register(device, address=1, value=1, client=fake)
+
+    assert ok is False
+    assert "Modbus error" in err
+
+
+async def test_write_register_exception_captured():
+    device = _device([])
+    fake = FakeClient(write_exc=TimeoutError("write timeout"))
+
+    ok, err = await write_register(device, address=1, value=1, client=fake)
+
+    assert ok is False
+    assert "TimeoutError" in err
 
 
 async def test_unknown_data_type_reports_error_without_crashing():
