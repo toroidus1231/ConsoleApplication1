@@ -1,0 +1,53 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: #0e1116;
+  color: #e6e6e6;
+}
+nav {
+  display: flex;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #1a1f29;
+  border-bottom: 1px solid #2a2f3a;
+}
+nav a {
+  color: #8ab4f8;
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+}
+nav a.active { color: #fff; border-bottom: 2px solid #8ab4f8; }
+main { padding: 1rem 1.5rem; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 1.4rem; margin-top: 0; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #2a2f3a; vertical-align: top; font-size: 0.9rem; }
+th { background: #1a1f29; font-weight: 600; }
+.severity-critical { color: #f28b82; font-weight: 600; }
+.severity-major { color: #fdd663; font-weight: 600; }
+.severity-minor { color: #8ab4f8; }
+.severity-info { color: #9aa0a6; }
+.status-passed { color: #81c995; }
+.status-failed, .status-aborted, .status-restore_failure { color: #f28b82; }
+.status-running, .status-queued { color: #fdd663; }
+button {
+  background: #1a73e8; border: none; color: white; padding: 0.4rem 0.8rem;
+  border-radius: 4px; cursor: pointer; font-size: 0.9rem;
+}
+button:hover { background: #1557b0; }
+input, select {
+  background: #1a1f29; color: white; border: 1px solid #2a2f3a;
+  padding: 0.4rem 0.6rem; border-radius: 4px; font-size: 0.9rem;
+}
+.card {
+  background: #1a1f29; border: 1px solid #2a2f3a; border-radius: 6px;
+  padding: 1rem; margin: 0.5rem 0;
+}
+.summary-tile {
+  display: inline-block; min-width: 120px; padding: 1rem; margin: 0.25rem;
+  background: #1a1f29; border: 1px solid #2a2f3a; border-radius: 6px;
+  text-align: center;
+}
+.summary-tile .count { font-size: 2rem; font-weight: bold; }
+.chain-broken { background: #3a1f24; padding: 0.5rem; border-left: 3px solid #f28b82; }
+.chain-valid { background: #1f3a23; padding: 0.5rem; border-left: 3px solid #81c995; }
