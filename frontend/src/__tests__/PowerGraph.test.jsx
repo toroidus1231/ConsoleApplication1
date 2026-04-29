@@ -67,8 +67,8 @@ describe("PowerGraph (Module 18 — Power DAG view)", () => {
     render(<MemoryRouter><PowerGraph /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText(/Utility \/ Gen/)).toBeInTheDocument();
-      expect(screen.getByText(/PDU/)).toBeInTheDocument();
-      expect(screen.getByText(/Branch/)).toBeInTheDocument();
+      expect(screen.getByText(/Transformers/)).toBeInTheDocument();
+      expect(screen.getByText(/UPS/)).toBeInTheDocument();
     });
   });
 });
