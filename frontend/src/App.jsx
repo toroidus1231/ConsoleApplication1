@@ -19,6 +19,11 @@ import Discovery from "./pages/Discovery";
 import Racks from "./pages/Racks";
 import SingleLine from "./pages/SingleLine";
 import RelayConsole from "./pages/RelayConsole";
+import TransformerConsole from "./pages/TransformerConsole";
+import GeneratorConsole from "./pages/GeneratorConsole";
+import UpsConsole from "./pages/UpsConsole";
+import HipotConsole from "./pages/HipotConsole";
+import AtsConsole from "./pages/AtsConsole";
 import { useSSE } from "./hooks/useSSE";
 
 const NAV = [
@@ -49,6 +54,11 @@ export default function App() {
           <Route path="/"            element={<Dashboard />} />
           <Route path="/sld"         element={<SingleLine />} />
           <Route path="/relays/:id"  element={<RelayConsole />} />
+          <Route path="/xfmr/:id"    element={<TransformerConsole />} />
+          <Route path="/gens/:id"    element={<GeneratorConsole />} />
+          <Route path="/ups/:id"     element={<UpsConsole />} />
+          <Route path="/hipot/:id"   element={<HipotConsole />} />
+          <Route path="/ats/:id"     element={<AtsConsole />} />
           <Route path="/discovery"   element={<Discovery />} />
           <Route path="/devices"     element={<Devices />} />
           <Route path="/racks"       element={<Racks />} />

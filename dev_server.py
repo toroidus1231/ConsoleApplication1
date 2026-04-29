@@ -31,6 +31,13 @@ from simulator.sim import (
     UPSSimulator,
 )
 from simulator.telemetry import live_telemetry, push_soe, telemetry_to_dict
+from simulator.equipment_records import (
+    ats_record,
+    cable_hipot_record,
+    generator_record,
+    transformer_record,
+    ups_record,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +428,29 @@ def _build_bridge(simulator):
 # ---------------------------------------------------------------------------
 
 
+def _equipment_provider():
+    """Returns a function (kind, device_id) -> dict.
+
+    `kind` is one of: xfmr, gen, ups, cable, ats. The function dispatches to
+    the right equipment_records helper. The XFMR-A1 record always reflects
+    the current C2H2 = 3.4 ppm so the Duval triangle/dashboard renders
+    the active-arcing fault zone."""
+    def provider(kind: str, device_id: str) -> dict:
+        if kind in ("xfmr", "transformer"):
+            c2h2_now = 3.4 if device_id == "xfmr-A1" else 0.8
+            return transformer_record(device_id, c2h2_now)
+        if kind in ("gen", "generator"):
+            return generator_record(device_id)
+        if kind == "ups":
+            return ups_record(device_id)
+        if kind in ("cable", "hipot"):
+            return cable_hipot_record(device_id)
+        if kind == "ats":
+            return ats_record(device_id)
+        raise KeyError(f"unknown equipment kind: {kind}")
+    return provider
+
+
 async def _seed_attestation_chain(attest, devices):
     """Drop a few sample records on the chain so the attestation viewer
     has something to verify and the punch list evidence modal can resolve
@@ -537,6 +567,7 @@ async def main():
             }
         },
         telemetry_provider=lambda: telemetry_to_dict(live_telemetry(devices, runs)),
+        equipment_provider=_equipment_provider(),
     )
     app = create_app(deps)
 

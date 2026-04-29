@@ -479,11 +479,18 @@ function Legend({ x, y }) {
 // ---------------------------------------------------------------------------
 
 function DetailPanel({ t, selected }) {
+  const navigate = useNavigate();
   if (!selected) return (
     <div className="card" style={{ width: 320 }}>
       <div className="card-h">Selection</div>
       <p style={{ color: "var(--text-faint)" }}>Click any element on the SLD.</p>
     </div>
+  );
+
+  const ConsoleLink = ({ to, label }) => (
+    <button onClick={() => navigate(to)} style={{ marginTop: 10, width: "100%" }}>
+      Open {label} →
+    </button>
   );
 
   if (selected.type === "bus") {
@@ -511,6 +518,7 @@ function DetailPanel({ t, selected }) {
         <Metric label="Spring"          value={b.spring_charged ? "charged" : "uncharged"} />
         <Metric label="Contact wear"    value={`${b.contact_wear_pct} %`} />
         <Metric label="Op count"        value={b.ops_count} />
+        <ConsoleLink to={`/hipot/cable-${selected.id}-cable`} label="cable hipot record" />
       </div>
     );
   }
@@ -531,6 +539,7 @@ function DetailPanel({ t, selected }) {
         } />
         <Metric label="Moisture"        value={`${x.moisture_ppm.toFixed(1)} ppm`} />
         <Metric label="PD magnitude"    value={`${x.pd_magnitude_pc.toFixed(1)} pC`} />
+        <ConsoleLink to={`/xfmr/${selected.id}`} label="full XFMR console" />
       </div>
     );
   }
@@ -545,6 +554,7 @@ function DetailPanel({ t, selected }) {
         <Metric label="Battery"         value={`${u.battery_pct.toFixed(1)} %`} />
         <Metric label="Runtime"         value={`${u.runtime_minutes.toFixed(1)} min`} />
         <Metric label="Load"            value={`${u.load_pct.toFixed(1)} %`} />
+        <ConsoleLink to={`/ups/${selected.id}`} label="full UPS console" />
       </div>
     );
   }
@@ -561,6 +571,7 @@ function DetailPanel({ t, selected }) {
         <Metric label="Coolant temp"    value={`${g.coolant_temp_c.toFixed(1)} °C`} />
         <Metric label="Fuel"            value={`${g.fuel_level_pct.toFixed(1)} %`} />
         <Metric label="Runtime"         value={`${g.runtime_hours.toFixed(0)} h`} />
+        <ConsoleLink to={`/gens/${selected.id}`} label="full Gen console" />
       </div>
     );
   }
@@ -571,6 +582,7 @@ function DetailPanel({ t, selected }) {
         <Metric label="Source"          value={<span className="badge badge-passed">SOURCE 1</span>} />
         <Metric label="Position"        value="Normal" />
         <Metric label="Test mode"       value="Off" />
+        <ConsoleLink to={`/ats/${selected.id}`} label="ATS transfer test record" />
       </div>
     );
   }
