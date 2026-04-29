@@ -283,6 +283,55 @@ async def test_chain_is_valid_across_outage_and_recovery(tmp_path):
 # --- Immutability ------------------------------------------------------------
 
 
+# --- Spec §5.3 Duplicate records ---------------------------------------------
+
+
+async def test_duplicate_nonce_is_discarded(tmp_path):
+    minio = FakeMinio()
+    eng = _make_engine(tmp_path, minio)
+
+    rec1 = _record(value=1.0, ts=1_712_847_600_000_000_001)
+    rec1.nonce = "replay-1"
+    rec2 = _record(value=2.0, ts=1_712_847_600_000_000_002)
+    rec2.nonce = "replay-1"  # same nonce as rec1
+
+    await eng.submit(rec1)
+    await eng.submit(rec2)
+    await eng.drain()
+
+    # Only the first record should have been chained.
+    assert eng.sequence == 1
+    assert len(minio.store) == 1
+    stored = json.loads(next(iter(minio.store.values())))
+    assert stored["value"] == 1.0
+
+
+async def test_distinct_nonces_both_chained(tmp_path):
+    minio = FakeMinio()
+    eng = _make_engine(tmp_path, minio)
+
+    for i in range(3):
+        await eng.submit(_record(value=float(i), ts=1_712_847_600_000_000_000 + i))
+    await eng.drain()
+
+    nonces = {json.loads(b)["nonce"] for b in minio.store.values()}
+    assert len(nonces) == 3
+    assert eng.sequence == 3
+
+
+async def test_caller_supplied_nonce_is_preserved(tmp_path):
+    minio = FakeMinio()
+    eng = _make_engine(tmp_path, minio)
+
+    rec = _record()
+    rec.nonce = "external-source-42"
+    await eng.submit(rec)
+    await eng.drain()
+
+    stored = json.loads(next(iter(minio.store.values())))
+    assert stored["nonce"] == "external-source-42"
+
+
 async def test_minio_object_lock_prevents_delete(tmp_path):
     minio = FakeMinio()
     eng = _make_engine(tmp_path, minio)

@@ -76,6 +76,10 @@ class AttestationEngine:
         self._sequence: int = 0
         self._chain_id: str = facility_name
         self._nonce_counter: int = 0
+        # Per spec §5.3: duplicate records → keep first, discard second. The
+        # consumer ignores any record whose nonce has already been chained.
+        # Keys are bounded by submit() rate × project duration, ~millions max.
+        self._seen_nonces: set[str] = set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -89,11 +93,18 @@ class AttestationEngine:
         return self._sequence
 
     async def submit(self, record: AttestationRecord) -> None:
-        """Enqueue a record for attestation. Non-blocking for the producer."""
-        self._nonce_counter += 1
+        """Enqueue a record for attestation. Non-blocking for the producer.
+
+        If ``record.nonce`` is already set (e.g. the producer is replaying
+        records after a crash), it is preserved — the consumer will dedup
+        against ``_seen_nonces``. If unset, a fresh per-worker nonce is
+        assigned.
+        """
         record.facility = self._facility
         record.worker_id = self._worker_id
-        record.nonce = f"{self._worker_id}-{self._nonce_counter}"
+        if not record.nonce:
+            self._nonce_counter += 1
+            record.nonce = f"{self._worker_id}-{self._nonce_counter}"
         await self._queue.put(record)
 
     async def run(self) -> None:
@@ -188,6 +199,10 @@ class AttestationEngine:
     # Internals
     # ------------------------------------------------------------------
     async def _process(self, record: AttestationRecord) -> None:
+        # Spec §5.3: duplicate records → keep first, discard second.
+        if record.nonce and record.nonce in self._seen_nonces:
+            return
+
         record_dict = asdict(record)
         canonical = _canonical_json(record_dict, self._previous_hash)
         hash_value = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -209,6 +224,8 @@ class AttestationEngine:
         # soon as a second record arrived during the outage.
         self._previous_hash = hash_value
         self._sequence += 1
+        if record.nonce:
+            self._seen_nonces.add(record.nonce)
 
         try:
             data = serialized.encode("utf-8")
