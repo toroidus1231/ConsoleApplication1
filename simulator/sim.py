@@ -199,6 +199,126 @@ class BreakerSimulator:
 
 
 # ---------------------------------------------------------------------------
+# Hipot tester (Vitrek 95X / V7X-style SCPI bench instrument)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HipotSimulator:
+    """Simulates a SCPI-controlled hipot (high-potential) tester.
+
+    Physics model: while a test is running, the instrument ramps voltage
+    from 0 to ``target_kv`` over ``ramp_seconds``, then holds for
+    ``hold_seconds``. Leakage current is modeled as
+
+        leakage_mA = base_leakage_mA + V_kV / insulation_mohm * 1000
+
+    (i.e. Ohm's law through the device-under-test's insulation
+    resistance, with a small base contribution from instrument
+    self-leakage). If at any point V exceeds ``breakdown_kv`` or leakage
+    crosses ``leakage_trip_mA``, the instrument trips and reports a
+    failure.
+
+    Operated via SCPI strings — same interface the serial_scpi poller
+    will use. ``send_scpi(command)`` accepts a query and returns the
+    response line, or empty for non-query commands.
+    """
+
+    target_kv: float = 2.5
+    ramp_seconds: float = 5.0
+    hold_seconds: float = 60.0
+    insulation_mohm: float = 1000.0
+    base_leakage_mA: float = 0.05
+    breakdown_kv: float = 10.0
+    leakage_trip_mA: float = 5.0
+
+    _state: str = "idle"  # idle | ramping | holding | passed | failed
+    _started_at: float = 0.0
+    _now: float = 0.0
+    _last_failure_reason: str = ""
+
+    def now(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        """Evolve the test physics forward by ``seconds``."""
+        self._now += seconds
+        if self._state in ("idle", "passed", "failed"):
+            return
+
+        elapsed = self._now - self._started_at
+        if elapsed < self.ramp_seconds:
+            self._state = "ramping"
+        elif elapsed < self.ramp_seconds + self.hold_seconds:
+            self._state = "holding"
+        else:
+            self._state = "passed"
+            return
+
+        v = self.current_voltage_kv()
+        if v >= self.breakdown_kv:
+            self._state = "failed"
+            self._last_failure_reason = f"breakdown at {v:.2f} kV"
+            return
+        leak = self.current_leakage_mA()
+        if leak >= self.leakage_trip_mA:
+            self._state = "failed"
+            self._last_failure_reason = (
+                f"leakage {leak:.2f} mA exceeded {self.leakage_trip_mA:.2f} mA at {v:.2f} kV"
+            )
+
+    # Physics ---------------------------------------------------------
+
+    def current_voltage_kv(self) -> float:
+        if self._state == "idle":
+            return 0.0
+        if self._state in ("passed", "failed"):
+            return self.target_kv if self._state == "passed" else 0.0
+        elapsed = self._now - self._started_at
+        if elapsed < self.ramp_seconds:
+            return self.target_kv * (elapsed / self.ramp_seconds)
+        return self.target_kv
+
+    def current_leakage_mA(self) -> float:
+        v = self.current_voltage_kv()
+        if v <= 0:
+            return 0.0
+        # Resistive: I = V / R. mA = (V_kV * 1000) / mohm.
+        resistive = (v * 1000.0) / self.insulation_mohm
+        return self.base_leakage_mA + resistive
+
+    # SCPI shim — what the poller talks to ----------------------------
+
+    def send_scpi(self, command: str) -> str:
+        """Handle a SCPI command. Queries (ending in '?') return one
+        response line as text. Non-queries return an empty string."""
+        cmd = command.strip()
+        if cmd.startswith(":TEST:START"):
+            self._state = "ramping"
+            self._started_at = self._now
+            self._last_failure_reason = ""
+            return ""
+        if cmd.startswith(":TEST:STOP"):
+            self._state = "idle"
+            return ""
+        if cmd == "*IDN?":
+            return "Vitrek,95X,SN-12345,1.0.0"
+        if cmd == ":READ:VOLT?":
+            return f"{self.current_voltage_kv():.4f}"
+        if cmd == ":READ:LEAK?":
+            return f"{self.current_leakage_mA():.4f}"
+        if cmd == ":READ:STATE?":
+            return self._state.upper()
+        if cmd == ":READ:RESULT?":
+            if self._state == "passed":
+                return "PASS"
+            if self._state == "failed":
+                return f"FAIL,{self._last_failure_reason}"
+            return "RUNNING"
+        return "ERR"
+
+
+# ---------------------------------------------------------------------------
 # Optional PyModbus server bridge
 # ---------------------------------------------------------------------------
 

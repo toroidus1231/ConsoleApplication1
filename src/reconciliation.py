@@ -76,10 +76,40 @@ class TestOutcome:
     category: str = ""  # safety | power | cooling | other
 
 
+@dataclass
+class CrossReading:
+    """Two readings of the same physical quantity for sensor-drift detection.
+
+    The platform builds one of these whenever a calibrated reference
+    instrument (e.g. Fluke 8508A clamped to bus A1) is read at the same
+    timestamp as a permanently-installed sensor on the same physical
+    point (e.g. CM2000-A1's voltage_ll_avg). A divergence above the
+    tolerance flags drift in the permanent sensor, with the reference
+    instrument's calibration cert in the audit trail.
+    """
+
+    physical_link: str
+    primary_device_id: str
+    primary_device_name: str
+    primary_reading: float
+    primary_timestamp_ns: int
+    primary_unit: str
+    reference_device_id: str
+    reference_device_name: str
+    reference_reading: float
+    reference_timestamp_ns: int
+    reference_calibration_cert: str = ""
+
+
 def reconcile(
     design: list[DesignDevice],
     actual: list[ActualDevice],
     test_outcomes: Iterable[TestOutcome] = (),
+    cross_readings: Iterable[CrossReading] = (),
+    *,
+    sensor_drift_minor_pct: float = 1.0,
+    sensor_drift_major_pct: float = 5.0,
+    timestamp_skew_ns: int = 5_000_000_000,  # 5 s — see note below
 ) -> list[PunchListItem]:
     """Run every reconciliation check and return the combined punch list."""
     actual_by_id = {a.device_id: a for a in actual}
@@ -104,6 +134,64 @@ def reconcile(
             continue
         items.append(_failed_test(outcome, actual_by_id.get(outcome.device_id)))
 
+    # Sensor-drift cross-validation.
+    items.extend(check_sensor_drift(
+        cross_readings,
+        minor_pct=sensor_drift_minor_pct,
+        major_pct=sensor_drift_major_pct,
+        timestamp_skew_ns=timestamp_skew_ns,
+    ))
+
+    return items
+
+
+def check_sensor_drift(
+    readings: Iterable[CrossReading],
+    *,
+    minor_pct: float = 1.0,
+    major_pct: float = 5.0,
+    timestamp_skew_ns: int = 5_000_000_000,
+) -> list[PunchListItem]:
+    """For every CrossReading where the primary diverges from the reference
+    by more than ``minor_pct``, emit a PunchListItem.
+
+    Severity:
+      < minor_pct           → no item
+      [minor_pct, major_pct) → minor (calibrate or trend)
+      >= major_pct          → major (replace or recalibrate immediately)
+
+    Pairs whose timestamps are >timestamp_skew_ns apart are skipped — they
+    aren't simultaneous enough to compare. Default 5s covers reasonable
+    poll-loop scheduling skew.
+    """
+    items: list[PunchListItem] = []
+    for r in readings:
+        if r.reference_reading == 0:
+            continue
+        if abs(r.primary_timestamp_ns - r.reference_timestamp_ns) > timestamp_skew_ns:
+            continue
+        diff = r.primary_reading - r.reference_reading
+        diff_pct = abs(diff) / abs(r.reference_reading) * 100.0
+        if diff_pct < minor_pct:
+            continue
+        severity = "major" if diff_pct >= major_pct else "minor"
+        cert = r.reference_calibration_cert or "uncalibrated"
+        items.append(PunchListItem(
+            severity=severity,
+            category="sensor_drift",
+            device_id=r.primary_device_id,
+            device_name=r.primary_device_name,
+            site="",
+            rack="",
+            expected=f"{r.reference_reading:.4f} {r.primary_unit} (ref: {r.reference_device_name}, cal cert {cert})",
+            actual=f"{r.primary_reading:.4f} {r.primary_unit}",
+            source="reconciliation",
+            remediation=(
+                f"Primary sensor reads {diff_pct:.2f}% off reference instrument. "
+                f"Recalibrate or replace {r.primary_device_name}. "
+                f"Physical link: {r.physical_link}."
+            ),
+        ))
     return items
 
 

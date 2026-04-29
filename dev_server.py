@@ -89,6 +89,8 @@ def punchlist_for(devices, runs):
     """Synthesize a realistic punch list from the twin: failed tests get
     critical/major rows, model mismatches and discovery anomalies fill in
     the rest."""
+    from src.reconciliation import CrossReading, check_sensor_drift  # noqa: PLC0415
+
     items = []
     SAFETY_TESTS = {"ups_battery_transfer", "ats_transfer", "breaker_trip"}
     for r in runs:
@@ -143,6 +145,60 @@ def punchlist_for(devices, runs):
         source="discovery",
         remediation="Discovered Juniper switch not in BIM design.",
     ))
+
+    # Sensor-drift findings from the bench-instrument cross-validation
+    # workflow. The twin pretends a portable Fluke 8508A reference DMM
+    # has been clamped to bus A1 and read at the same timestamp as the
+    # permanent CM2000-A1 voltage sensor — divergence flagged by
+    # check_sensor_drift().
+    drift_readings = [
+        CrossReading(
+            physical_link="bus-A1.voltage_ll_avg",
+            primary_device_id="cm2000-A1",
+            primary_device_name="cm2000-A1",
+            primary_reading=412.0,
+            primary_timestamp_ns=1_712_847_600_000_000_000,
+            primary_unit="V",
+            reference_device_id="fluke-8508a-bench",
+            reference_device_name="Fluke 8508A (cal cert sha256:f8508a-2026-q2)",
+            reference_reading=478.4,
+            reference_timestamp_ns=1_712_847_600_000_500_000,
+            reference_calibration_cert="sha256:f8508a-2026-q2",
+        ),
+        CrossReading(
+            physical_link="bus-B1.voltage_ll_avg",
+            primary_device_id="cm2000-B1",
+            primary_device_name="cm2000-B1",
+            primary_reading=480.7,
+            primary_timestamp_ns=1_712_847_600_000_000_000,
+            primary_unit="V",
+            reference_device_id="fluke-8508a-bench",
+            reference_device_name="Fluke 8508A (cal cert sha256:f8508a-2026-q2)",
+            reference_reading=489.5,  # 1.83% drift -> minor
+            reference_timestamp_ns=1_712_847_600_000_500_000,
+            reference_calibration_cert="sha256:f8508a-2026-q2",
+        ),
+    ]
+    items.extend(check_sensor_drift(drift_readings))
+
+    # Hipot test result attested via the SCPI poller (Vitrek 95X). The
+    # hipot ran on cable-run-A1, leakage stayed within tolerance during
+    # the 60s hold at 2.5 kV, but trend-tracking shows leakage trending
+    # up over the last three commissioning runs — minor for now.
+    items.append(PunchListItem(
+        severity="minor", category="insulation",
+        device_id="cable-A1-trunk", device_name="cable-A1-trunk",
+        site="DC1-Ashburn", rack="A1",
+        expected="leakage <= 0.5 mA at 2.5 kV (Vitrek 95X cert sha256:vitrek-2026-q2)",
+        actual="0.42 mA at 2.5 kV (last 3 runs: 0.31 → 0.37 → 0.42 mA)",
+        source="active_test",
+        remediation=(
+            "Hipot result still within tolerance but leakage is trending "
+            "up — schedule a Megger insulation test at next maintenance "
+            "window."
+        ),
+    ))
+
     return items
 
 

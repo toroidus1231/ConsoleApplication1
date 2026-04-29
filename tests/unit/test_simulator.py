@@ -14,6 +14,7 @@ from simulator.sim import (
     BRK_REG_TRIP_CMD,
     BRK_REG_TRIP_TIME_CYCLES,
     BreakerSimulator,
+    HipotSimulator,
     UPS_REG_BATTERY_PCT,
     UPS_REG_OUTPUT_VOLTAGE,
     UPS_REG_STATUS,
@@ -119,3 +120,74 @@ def test_breaker_close_only_works_when_spring_charged_and_open():
     brk.registers.write(BRK_REG_CLOSE_CMD, 1)
     brk.advance(0.001)
     assert brk.registers.read(BRK_REG_POSITION) == 1
+
+
+# --- HipotSimulator ----------------------------------------------------------
+
+
+def test_hipot_idle_idn_query_returns_identification():
+    h = HipotSimulator()
+    assert h.send_scpi("*IDN?").startswith("Vitrek,95X,SN-")
+    assert h.send_scpi(":READ:STATE?") == "IDLE"
+    assert h.send_scpi(":READ:VOLT?") == "0.0000"
+
+
+def test_hipot_voltage_ramps_linearly_to_target():
+    h = HipotSimulator(target_kv=2.5, ramp_seconds=5.0, hold_seconds=60.0)
+    h.send_scpi(":TEST:START")
+    h.advance(2.5)  # halfway through ramp
+    v = float(h.send_scpi(":READ:VOLT?"))
+    assert v == pytest.approx(1.25, abs=0.01)
+    h.advance(2.6)  # past end of ramp
+    v = float(h.send_scpi(":READ:VOLT?"))
+    assert v == pytest.approx(2.5, abs=0.01)
+
+
+def test_hipot_passes_when_insulation_is_good():
+    h = HipotSimulator(target_kv=2.5, ramp_seconds=1.0, hold_seconds=2.0,
+                       insulation_mohm=1000.0, leakage_trip_mA=5.0)
+    h.send_scpi(":TEST:START")
+    h.advance(0.5)  # ramping
+    h.advance(0.7)  # holding
+    h.advance(2.5)  # past hold window
+    assert h.send_scpi(":READ:STATE?") == "PASSED"
+    assert h.send_scpi(":READ:RESULT?") == "PASS"
+
+
+def test_hipot_fails_on_low_insulation():
+    # 0.5 MΩ insulation → at 2.5 kV, leakage = 2500 V / 500_000 Ω = 5 mA exactly.
+    # Drop to 0.4 MΩ → 6.25 mA, which trips at 5 mA threshold.
+    h = HipotSimulator(target_kv=2.5, ramp_seconds=1.0, hold_seconds=10.0,
+                       insulation_mohm=0.4, leakage_trip_mA=5.0)
+    h.send_scpi(":TEST:START")
+    h.advance(1.5)  # well into hold
+    state = h.send_scpi(":READ:STATE?")
+    result = h.send_scpi(":READ:RESULT?")
+    assert state == "FAILED"
+    assert result.startswith("FAIL")
+    assert "leakage" in result
+
+
+def test_hipot_fails_on_breakdown_voltage_exceeded():
+    # If the user sets target_kv above the breakdown threshold, ramping
+    # will eventually trip. Breakdown 2.0 kV, target 5.0 kV.
+    h = HipotSimulator(target_kv=5.0, ramp_seconds=2.0, hold_seconds=1.0,
+                       breakdown_kv=2.0, leakage_trip_mA=999.0)
+    h.send_scpi(":TEST:START")
+    h.advance(1.2)
+    result = h.send_scpi(":READ:RESULT?")
+    assert result.startswith("FAIL")
+    assert "breakdown" in result
+
+
+def test_hipot_stop_returns_to_idle():
+    h = HipotSimulator(ramp_seconds=1.0, hold_seconds=10.0)
+    h.send_scpi(":TEST:START")
+    h.advance(0.2)
+    h.send_scpi(":TEST:STOP")
+    assert h.send_scpi(":READ:STATE?") == "IDLE"
+
+
+def test_hipot_unknown_scpi_returns_err():
+    h = HipotSimulator()
+    assert h.send_scpi(":NONSENSE?") == "ERR"

@@ -6,8 +6,10 @@ Exercises the contracts §5.2 severity matrix.
 
 from src.reconciliation import (
     ActualDevice,
+    CrossReading,
     DesignDevice,
     TestOutcome,
+    check_sensor_drift,
     reconcile,
 )
 
@@ -202,3 +204,85 @@ def test_combined_design_and_test_failures_all_emitted():
     )
     cats = {i.category for i in items}
     assert cats >= {"identity", "firmware", "test_failure"}
+
+
+# --- Sensor-drift cross-validation ------------------------------------------
+
+
+def _cross(primary_v: float, reference_v: float, *, dt_ns: int = 0,
+           cert: str = "sha256:ref-cert-1") -> CrossReading:
+    return CrossReading(
+        physical_link="bus-A1.voltage_ll_avg",
+        primary_device_id="cm2000-A1",
+        primary_device_name="cm2000-A1",
+        primary_reading=primary_v,
+        primary_timestamp_ns=1_712_847_600_000_000_000,
+        primary_unit="V",
+        reference_device_id="fluke-8508a-bench",
+        reference_device_name="Fluke 8508A bench DMM",
+        reference_reading=reference_v,
+        reference_timestamp_ns=1_712_847_600_000_000_000 + dt_ns,
+        reference_calibration_cert=cert,
+    )
+
+
+def test_sensor_within_tolerance_no_item():
+    # 478.0 vs 478.5 → 0.10% drift, under default 1%.
+    items = check_sensor_drift([_cross(478.0, 478.5)])
+    assert items == []
+
+
+def test_minor_drift_emits_minor_severity():
+    # 478 vs 489 → ~2.25% drift, between 1% and 5%.
+    items = check_sensor_drift([_cross(478.0, 489.0)])
+    assert len(items) == 1
+    assert items[0].severity == "minor"
+    assert items[0].category == "sensor_drift"
+    assert "Recalibrate" in items[0].remediation
+
+
+def test_major_drift_emits_major_severity():
+    # 412 vs 478 → ~13.8% drift, well above 5%.
+    items = check_sensor_drift([_cross(412.0, 478.0)])
+    assert len(items) == 1
+    assert items[0].severity == "major"
+    assert "13" in items[0].remediation  # diff_pct shown in remediation
+
+
+def test_calibration_cert_recorded_in_expected_field():
+    items = check_sensor_drift([_cross(412.0, 478.0, cert="sha256:cert-XYZ")])
+    assert "sha256:cert-XYZ" in items[0].expected
+    assert "Fluke 8508A bench DMM" in items[0].expected
+
+
+def test_zero_reference_skipped_silently():
+    # Avoid division by zero when reference reads 0.
+    items = check_sensor_drift([_cross(412.0, 0.0)])
+    assert items == []
+
+
+def test_timestamp_skew_beyond_tolerance_skipped():
+    # 412 vs 478 with 60s skew — too far apart to compare.
+    items = check_sensor_drift([_cross(412.0, 478.0, dt_ns=60_000_000_000)])
+    assert items == []
+
+
+def test_within_skew_tolerance_still_flagged():
+    # 1 second skew is within the 5 s default tolerance.
+    items = check_sensor_drift([_cross(412.0, 478.0, dt_ns=1_000_000_000)])
+    assert len(items) == 1
+
+
+def test_reconcile_includes_cross_readings():
+    items = reconcile(
+        [_design()],
+        [_actual()],
+        cross_readings=[_cross(412.0, 478.0)],
+    )
+    drift = [i for i in items if i.category == "sensor_drift"]
+    assert len(drift) == 1
+
+
+def test_remediation_names_physical_link_so_operator_knows_what_to_recalibrate():
+    items = check_sensor_drift([_cross(412.0, 478.0)])
+    assert "bus-A1.voltage_ll_avg" in items[0].remediation
