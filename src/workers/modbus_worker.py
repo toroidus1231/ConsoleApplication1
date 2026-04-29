@@ -51,6 +51,10 @@ class ModbusWorker:
         self.devices: list[DeviceInfo] = []
         self.failures: dict[str, int] = {}
         self._unreachable: set[str] = set()
+        # Spec §5.1 firmware mismatch: emit one warning per (device, fw) pair.
+        # Tracking what we've already warned about prevents event spam each
+        # poll cycle.
+        self._fw_warned: set[tuple[str, str]] = set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -122,6 +126,39 @@ class ModbusWorker:
                 )
             )
 
+    async def _check_firmware(self, device: DeviceInfo, result: PollResult) -> None:
+        """Spec §5.1: warn once when device firmware doesn't match the
+        Config Context's expected ``firmware_version``. We don't fail the
+        poll — the spec says "warn on mismatch, skip" — we just emit one
+        event so the dashboard can surface it.
+
+        The expected register name is ``firmware_version``. If the device
+        config doesn't declare an expected version, this is a no-op.
+        """
+        expected = device.config_context.get("firmware_version")
+        if not expected:
+            return
+        actual = result.measurements.get("firmware_version")
+        if actual is None:
+            actual = result.raw_bytes.get("firmware_version")
+        if actual is None or str(actual) == str(expected):
+            return
+        key = (device.device_id, str(actual))
+        if key in self._fw_warned:
+            return
+        self._fw_warned.add(key)
+        await self.event_queue.put(
+            Event(
+                event_type="firmware_mismatch",
+                timestamp=_now_iso(),
+                data={
+                    "device_id": device.device_id,
+                    "expected": str(expected),
+                    "actual": str(actual),
+                },
+            )
+        )
+
     async def _handle_success(self, device: DeviceInfo, result: PollResult) -> None:
         # Clear any prior failure streak and (if we'd flagged it) announce recovery.
         had_failures = self.failures.get(device.device_id, 0) > 0
@@ -138,6 +175,8 @@ class ModbusWorker:
         elif had_failures:
             # Transient failure recovered before we'd flagged UNREACHABLE — no event.
             pass
+
+        await self._check_firmware(device, result)
 
         await self.influx.write_poll(result)
 

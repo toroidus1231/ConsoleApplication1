@@ -292,6 +292,102 @@ async def test_next_interval_default_with_no_devices():
 # --- Device loading ----------------------------------------------------------
 
 
+# --- Spec §5.1 firmware mismatch ---------------------------------------------
+
+
+def _device_with_fw(expected_fw: str) -> DeviceInfo:
+    d = _device("1")
+    d.config_context["firmware_version"] = expected_fw
+    return d
+
+
+async def test_firmware_match_emits_no_warning():
+    # Device config expects FW "321". Device reports 321.0 — match by str(321.0)
+    # vs "321". We compare via str() so float(321.0) → "321.0" != "321". Cover
+    # that nuance: spec config should declare the expected value the way it
+    # comes out of the decoder. Use "321.0" here.
+    device = _device_with_fw("321.0")
+
+    async def poll(d):
+        return _poll_ok(d, measurements={"firmware_version": 321.0, "voltage": 480.0})
+
+    worker, _, _, events = _make_worker([device], poll)
+    await worker.refresh_devices()
+    await worker.poll_all_once()
+
+    drained = await _drain(events)
+    assert all(e.event_type != "firmware_mismatch" for e in drained)
+
+
+async def test_firmware_mismatch_emits_warning_once():
+    device = _device_with_fw("321.0")
+
+    async def poll(d):
+        return _poll_ok(d, measurements={"firmware_version": 200.0, "voltage": 480.0})
+
+    worker, _, _, events = _make_worker([device], poll)
+    await worker.refresh_devices()
+
+    await worker.poll_all_once()
+    await worker.poll_all_once()
+    await worker.poll_all_once()
+
+    drained = await _drain(events)
+    fw_events = [e for e in drained if e.event_type == "firmware_mismatch"]
+    assert len(fw_events) == 1
+    assert fw_events[0].data == {
+        "device_id": "1",
+        "expected": "321.0",
+        "actual": "200.0",
+    }
+
+
+async def test_firmware_change_emits_new_warning():
+    device = _device_with_fw("321.0")
+    fw_seq = iter([200.0, 200.0, 250.0, 250.0])
+
+    async def poll(d):
+        return _poll_ok(d, measurements={"firmware_version": next(fw_seq), "voltage": 480.0})
+
+    worker, _, _, events = _make_worker([device], poll)
+    await worker.refresh_devices()
+
+    for _ in range(4):
+        await worker.poll_all_once()
+
+    drained = await _drain(events)
+    fw_events = [e for e in drained if e.event_type == "firmware_mismatch"]
+    assert {e.data["actual"] for e in fw_events} == {"200.0", "250.0"}
+
+
+async def test_no_expected_firmware_means_no_warning():
+    device = _device("1")  # no firmware_version in config_context
+
+    async def poll(d):
+        return _poll_ok(d, measurements={"firmware_version": 200.0, "voltage": 480.0})
+
+    worker, _, _, events = _make_worker([device], poll)
+    await worker.refresh_devices()
+    await worker.poll_all_once()
+
+    drained = await _drain(events)
+    assert all(e.event_type != "firmware_mismatch" for e in drained)
+
+
+async def test_no_actual_firmware_reading_skips_check():
+    device = _device_with_fw("321.0")
+
+    async def poll(d):
+        return _poll_ok(d, measurements={"voltage": 480.0})  # no firmware reg
+
+    worker, _, _, events = _make_worker([device], poll)
+    await worker.refresh_devices()
+    await worker.poll_all_once()
+
+    drained = await _drain(events)
+    assert all(e.event_type != "firmware_mismatch" for e in drained)
+
+
 async def test_refresh_devices_calls_device_loader():
     calls = {"n": 0}
 
