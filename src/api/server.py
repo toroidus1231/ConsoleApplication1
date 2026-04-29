@@ -45,6 +45,14 @@ class Deps:
     pdf_pipeline: Any = None
     bim: Any = None
     event_queue: Optional[asyncio.Queue[Event]] = None
+    # Optional facility model for the demo UI: list[dict] of devices and
+    # the power_graph dict. Real deployments hit NetBox instead — these
+    # exist so dev_server.py can drive the dashboard without NetBox.
+    facility_devices: list[dict] = field(default_factory=list)
+    facility_power_graph: dict = field(default_factory=dict)
+    facility_test_runs: list[dict] = field(default_factory=list)
+    facility_checklists: dict = field(default_factory=dict)
+    discovery_state: dict = field(default_factory=dict)
     # SSE fan-out — registered listeners get every event.
     _sse_subscribers: set[asyncio.Queue[Event]] = field(default_factory=set)
 
@@ -152,6 +160,152 @@ def create_app(deps: Deps) -> FastAPI:
             "chain_length": deps.attestation.sequence,
             "last_hash": deps.attestation.previous_hash,
         }
+
+    @app.get("/api/v1/attestation/{record_hash}", dependencies=[Depends(auth)])
+    async def attestation_by_hash(record_hash: str):
+        """Return one AttestedRecord by its SHA-256 hash. Used by the punch
+        list evidence modal to render the chained record + raw bytes."""
+        if not deps.attestation:
+            raise HTTPException(503, "attestation engine not configured")
+        for obj in deps.attestation._minio.list_objects(
+            deps.attestation._bucket, prefix=f"{deps.attestation._chain_id}/", recursive=True
+        ):
+            stream = deps.attestation._minio.get_object(
+                deps.attestation._bucket, obj.object_name
+            )
+            try:
+                body = stream.read()
+            finally:
+                if hasattr(stream, "close"):
+                    stream.close()
+            record = json.loads(body)
+            if record.get("hash") == record_hash:
+                return {"record": record}
+        raise HTTPException(404, f"no attested record with hash {record_hash}")
+
+    # ------------------------------------------------------------------
+    # Facility model (devices, power graph, test runs)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/v1/devices", dependencies=[Depends(auth)])
+    async def devices(protocol: str | None = None, site: str | None = None,
+                      rack: str | None = None):
+        rows = deps.facility_devices
+        if protocol:
+            rows = [d for d in rows if d.get("protocol") == protocol]
+        if site:
+            rows = [d for d in rows if d.get("site") == site]
+        if rack:
+            rows = [d for d in rows if d.get("rack") == rack]
+        return {"devices": rows}
+
+    @app.get("/api/v1/devices/{device_id}", dependencies=[Depends(auth)])
+    async def device_detail(device_id: str):
+        for d in deps.facility_devices:
+            if d.get("device_id") == device_id:
+                runs = [r for r in deps.facility_test_runs if r["device_id"] == device_id]
+                return {"device": d, "tests_run": runs}
+        raise HTTPException(404, f"unknown device {device_id}")
+
+    @app.get("/api/v1/power-graph", dependencies=[Depends(auth)])
+    async def power_graph_endpoint():
+        return deps.facility_power_graph
+
+    @app.get("/api/v1/racks", dependencies=[Depends(auth)])
+    async def racks():
+        """Return rack-elevation data: { rack: [device, ...] sorted by U, desc }."""
+        by_rack: dict[str, list[dict]] = {}
+        for d in deps.facility_devices:
+            by_rack.setdefault(d.get("rack", ""), []).append(d)
+        for rack in by_rack:
+            by_rack[rack].sort(key=lambda d: d.get("position", 0), reverse=True)
+        return {"racks": by_rack}
+
+    @app.get("/api/v1/tests/history", dependencies=[Depends(auth)])
+    async def test_history(device_id: str | None = None, status_filter: str | None = None):
+        rows = deps.facility_test_runs
+        if device_id:
+            rows = [r for r in rows if r["device_id"] == device_id]
+        if status_filter:
+            rows = [r for r in rows if r["status"] == status_filter]
+        return {"tests": rows}
+
+    @app.get("/api/v1/tests/live/{test_id}", dependencies=[Depends(auth)])
+    async def tests_live(test_id: str):
+        """SSE stream: per-monitor-register values during an active test.
+
+        Subscribes to the global event queue and forwards `poll_result`
+        events whose data carries this test_id. Each yield is one register
+        sample so a Recharts strip-chart can append in place.
+        """
+        local: asyncio.Queue[Event] = asyncio.Queue()
+        deps._sse_subscribers.add(local)
+
+        async def gen():
+            try:
+                while True:
+                    try:
+                        event = await asyncio.wait_for(local.get(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        yield {"event": "keepalive", "data": "{}"}
+                        continue
+                    if event.event_type != "poll_result":
+                        continue
+                    data = event.data or {}
+                    if data.get("test_id") and data.get("test_id") != test_id:
+                        continue
+                    measurements = data.get("measurements") or {}
+                    for register, value in measurements.items():
+                        yield {
+                            "event": "sample",
+                            "data": json.dumps({
+                                "test_id": test_id,
+                                "register": register,
+                                "value": value,
+                                "timestamp": event.timestamp,
+                            }),
+                        }
+            finally:
+                deps._sse_subscribers.discard(local)
+
+        return EventSourceResponse(gen())
+
+    # ------------------------------------------------------------------
+    # Discovery (Module 11) — exposes scan progress to the UI
+    # ------------------------------------------------------------------
+
+    @app.post("/api/v1/discovery/scan", dependencies=[Depends(auth)])
+    async def discovery_scan(body: dict):
+        scan_id = body.get("scan_id") or "scan-" + str(len(deps.discovery_state) + 1)
+        subnets = body.get("subnets", [])
+        deps.discovery_state[scan_id] = {
+            "scan_id": scan_id, "subnets": subnets,
+            "status": "running", "devices_found": 0,
+            "devices_classified": 0, "devices_unmatched": 0,
+            "errors": [],
+        }
+        return {"scan_id": scan_id, "status": "running"}
+
+    @app.get("/api/v1/discovery/status/{scan_id}", dependencies=[Depends(auth)])
+    async def discovery_status(scan_id: str):
+        if scan_id not in deps.discovery_state:
+            raise HTTPException(404, f"unknown scan_id {scan_id}")
+        return deps.discovery_state[scan_id]
+
+    @app.get("/api/v1/discovery/results/{scan_id}", dependencies=[Depends(auth)])
+    async def discovery_results(scan_id: str):
+        if scan_id not in deps.discovery_state:
+            raise HTTPException(404, f"unknown scan_id {scan_id}")
+        return {"scan_id": scan_id, "devices": deps.discovery_state[scan_id].get("devices", [])}
+
+    # ------------------------------------------------------------------
+    # Checklists (Module 19)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/v1/checklist/{device_id}", dependencies=[Depends(auth)])
+    async def checklist_get(device_id: str):
+        items = deps.facility_checklists.get(device_id, [])
+        return {"items": items}
 
     return app
 
