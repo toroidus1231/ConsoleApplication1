@@ -31,7 +31,7 @@ export function Breaker({ id, name, rating, state, x, y, onSelect, selected }) {
       <div className={"brk-glyph " + stateLower}>{glyph}</div>
       <div className="brk-info">
         <div className="sld-name">{name}</div>
-        <div className="sld-meta">{rating}A · {stateLower}</div>
+        <div className="sld-meta">{rating}A</div>
       </div>
     </div>
   );

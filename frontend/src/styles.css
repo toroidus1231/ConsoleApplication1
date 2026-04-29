@@ -633,6 +633,12 @@ select {
    Single-line diagram — HTML cards + SVG wires
    ========================================================================= */
 
+.sld-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
 .sld-canvas {
   position: relative;
   background: var(--bg-base);
@@ -640,16 +646,13 @@ select {
     linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
   background-size: 20px 20px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  width: 100%;
+  width: 1700px;
   height: 1100px;
 }
 .sld-wires {
-  position: absolute; inset: 0;
+  position: absolute; left: 0; top: 0;
   pointer-events: none;
-  width: 100%; height: 100%;
+  width: 1700px; height: 1100px;
 }
 .sld-card {
   position: absolute;
@@ -687,18 +690,22 @@ select {
   letter-spacing: -0.01em;
   margin-top: 1px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sld-meta {
   font-size: 10px;
   color: var(--text-tertiary);
   margin-top: 2px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .sld-source {
   display: flex; align-items: center; gap: 8px;
-  width: 160px;
+  width: 200px;
   padding: 8px 12px;
   border: 1px solid var(--border-default);
   background: var(--bg-elev-1);
@@ -717,7 +724,7 @@ select {
 .sld-source .src-rating{ font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-top: 1px; }
 
 .sld-breaker {
-  width: 130px;
+  width: 160px;
   display: flex; align-items: center; gap: 8px;
   padding: 6px 8px;
 }
@@ -739,24 +746,26 @@ select {
 
 .sld-bus {
   position: absolute;
-  display: flex; align-items: center;
-  gap: 12px;
-  height: 32px;
-  padding: 0 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  height: 30px;
+  padding: 0 10px;
   background: linear-gradient(90deg, var(--bg-elev-2), var(--bg-elev-1));
   border: 1px solid var(--border-default);
   border-left: 3px solid var(--pass);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  overflow: hidden;
 }
 .sld-bus:hover { border-left-color: var(--accent); }
-.bus-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
-.bus-stats { display: flex; gap: 14px; }
-.bus-stat { display: flex; align-items: baseline; gap: 4px; }
-.bus-stat .v { font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+.bus-label { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bus-stats { display: flex; gap: 10px; flex-shrink: 0; }
+.bus-stat { display: flex; align-items: baseline; gap: 3px; }
+.bus-stat .v { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.bus-stat .u { font-size: 9.5px; color: var(--text-tertiary); }
+.bus-stat .u { font-size: 9px; color: var(--text-tertiary); }
 
 .sld-xfmr {
   width: 130px;
@@ -789,6 +798,19 @@ select {
 .sld-xfmr .meta-row .ok { color: var(--text-tertiary); }
 .sld-xfmr .meta-row .alarm { color: var(--fail); font-weight: 600; }
 
+.sld-chip {
+  position: absolute;
+  display: inline-flex; align-items: center;
+  height: 22px; padding: 0 8px;
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 11px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
 .sld-relay {
   width: 88px;
   text-align: center;

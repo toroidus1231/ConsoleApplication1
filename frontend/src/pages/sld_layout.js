@@ -1,68 +1,78 @@
 // Layout coordinates for the single-line diagram. Pure data — keeps the
 // component logic in SingleLine.jsx focused on rendering.
-
-// Canvas grid: 1700 × 1100 px. Devices addressed by id; wires by [from, to].
+//
+// Canvas grid: 1700 × 1100 px. Origin top-left; (x, y) is the top-left
+// corner of each card. Width is fixed via CSS unless overridden with `w`.
 
 export const SLD_W = 1700;
 export const SLD_H = 1100;
 
-// (x, y) is the TOP-LEFT of each card.
+// ---------------------------------------------------------------------------
+//
+//  Column plan (left section: utility / MV / LV chain)
+//    col-1: x=  40   ─ XFMR-A1 / MTZ-A1 / LV-A1
+//    col-2: x= 220   ─ XFMR-A2 / MTZ-A2 / LV-A2
+//    col-3: x= 400   ─ XFMR-B1 / MTZ-B1 / LV-B1
+//    col-4: x= 580   ─ XFMR-B2 / MTZ-B2 / LV-B2
+//
+//  Right section (ATS / UPS):  x= 820 .. 1080
+//  Right section (Gen panels): x=1180 .. 1460
+// ---------------------------------------------------------------------------
+
 export const POS = {
-  // Sources
-  "util-A":         { x:  60, y:  30 },
-  "util-B":         { x: 280, y:  30 },
-  "gen-bus":        { x: 980, y:  30 },
+  // Tier 1 — Sources (y=30)
+  "util-A":         { x:  40, y:  30 },
+  "util-B":         { x: 320, y:  30 },
 
-  // MV main breakers
-  "mv-main-A":      { x:  60, y: 120 },
-  "mv-main-B":      { x: 280, y: 120 },
+  // Tier 2 — MV main breakers (y=130)
+  "mv-main-A":      { x:  60, y: 130 },
+  "mv-main-B":      { x: 340, y: 130 },
+  "sel-mv-main-A":  { x: 240, y: 134 },
+  "sel-mv-main-B":  { x: 520, y: 134 },
 
-  // SEL relays alongside MV mains
-  "sel-mv-main-A":  { x: 220, y: 124 },
-  "sel-mv-main-B":  { x: 440, y: 124 },
+  // Tier 3 — MV bus bars (y=220)
+  "mv-bus-A":       { x:  40, y: 220, w: 320 },
+  "mv-bus-B":       { x: 380, y: 220, w: 320 },
 
-  // MV buses (horizontal bars — width is computed at render time)
-  "mv-bus-A":       { x:  60, y: 200, w: 200 },
-  "mv-bus-B":       { x: 280, y: 200, w: 200 },
+  // MV tie + relay
+  "mv-tie":         { x: 305, y: 270 },
+  "sel-mv-tie":     { x: 320, y: 320 },
 
-  // MV tie between buses
-  "mv-tie":         { x: 192, y: 240 },
-  "sel-mv-tie":     { x: 200, y: 280 },
+  // Decorative PD monitors flanking the buses
+  "insulgard-mv-A": { x:  40, y: 270 },
+  "insulgard-mv-B": { x: 570, y: 270 },
 
-  // PD monitors (decorative chips)
-  "insulgard-mv-A": { x:  60, y: 240 },
-  "insulgard-mv-B": { x: 460, y: 240 },
+  // Tier 4 — Transformers (y=400)
+  "xfmr-A1":        { x:  40, y: 400 },
+  "xfmr-A2":        { x: 220, y: 400 },
+  "xfmr-B1":        { x: 400, y: 400 },
+  "xfmr-B2":        { x: 580, y: 400 },
 
-  // Transformers
-  "xfmr-A1":        { x:  20, y: 340 },
-  "xfmr-A2":        { x: 170, y: 340 },
-  "xfmr-B1":        { x: 320, y: 340 },
-  "xfmr-B2":        { x: 470, y: 340 },
+  // Tier 5 — MTZ incoming breakers (y=560)
+  "mtz-inc-A1":     { x:  40, y: 560 },
+  "mtz-inc-A2":     { x: 220, y: 560 },
+  "mtz-inc-B1":     { x: 400, y: 560 },
+  "mtz-inc-B2":     { x: 580, y: 560 },
 
-  // MTZ incoming breakers
-  "mtz-inc-A1":     { x:  20, y: 480 },
-  "mtz-inc-A2":     { x: 170, y: 480 },
-  "mtz-inc-B1":     { x: 320, y: 480 },
-  "mtz-inc-B2":     { x: 470, y: 480 },
+  // Tier 6 — LV bus bars (y=650)
+  "lv-bus-A1":      { x:  40, y: 650, w: 160 },
+  "lv-bus-A2":      { x: 220, y: 650, w: 160 },
+  "lv-bus-B1":      { x: 400, y: 650, w: 160 },
+  "lv-bus-B2":      { x: 580, y: 650, w: 160 },
 
-  // LV buses
-  "lv-bus-A1":      { x:  20, y: 560, w: 130 },
-  "lv-bus-A2":      { x: 170, y: 560, w: 130 },
-  "lv-bus-B1":      { x: 320, y: 560, w: 130 },
-  "lv-bus-B2":      { x: 470, y: 560, w: 130 },
+  // Right section — ATS / UPS chain
+  "ats-1":          { x: 820, y: 660 },
+  "ats-2":          { x: 1000, y: 660 },
+  "ups-A":          { x: 820, y: 800 },
+  "ups-B":          { x: 1000, y: 800 },
 
-  // ATS / UPS chain
-  "ats-1":          { x: 660, y: 600 },
-  "ats-2":          { x: 800, y: 600 },
-  "ups-A":          { x: 660, y: 720 },
-  "ups-B":          { x: 800, y: 720 },
+  // Far right — generator paralleling bus + gen panels
+  "gen-bus":        { x: 1240, y:  30 },
+  "gen-1":          { x: 1180, y: 140 },
+  "gen-2":          { x: 1180, y: 360 },
 
-  // Generator panels
-  "gen-1":          { x: 980, y: 110 },
-  "gen-2":          { x: 980, y: 320 },
-
-  // Legend
-  "legend":         { x: 1280, y:  30 },
+  // Legend (top right corner of the canvas, above the gen panels)
+  "legend":         { x: 1480, y:  30 },
 };
 
 // Anchor points: where wires attach to a card. {x, y} relative to the
@@ -83,13 +93,14 @@ export function anchor(id, side, devices = POS) {
 
 function cardWidth(id) {
   if (id.startsWith("xfmr-")) return 130;
-  if (id.startsWith("mtz-")) return 130;
-  if (id.startsWith("mv-main-")) return 130;
+  if (id.startsWith("mtz-")) return 160;
+  if (id.startsWith("mv-main-")) return 160;
   if (id === "mv-tie") return 130;
-  if (id.startsWith("ats-")) return 124;
-  if (id.startsWith("ups-")) return 124;
-  if (id.startsWith("gen-") && id !== "gen-bus") return 240;
-  if (id === "gen-bus" || id.startsWith("util-")) return 160;
+  if (id.startsWith("ats-")) return 140;
+  if (id.startsWith("ups-")) return 140;
+  if (id.startsWith("gen-") && id !== "gen-bus") return 280;
+  if (id === "gen-bus") return 200;
+  if (id.startsWith("util-")) return 200;
   if (id.startsWith("sel-")) return 88;
   if (id.startsWith("insulgard")) return 130;
   return 130;
@@ -97,10 +108,12 @@ function cardWidth(id) {
 
 function cardHeight(id) {
   if (id.startsWith("xfmr-")) return 110;
-  if (id.startsWith("mv-bus") || id.startsWith("lv-bus")) return 32;
-  if (id.startsWith("ats-")) return 70;
-  if (id.startsWith("ups-")) return 90;
-  if (id.startsWith("gen-") && id !== "gen-bus") return 180;
+  if (id.startsWith("mv-bus") || id.startsWith("lv-bus")) return 30;
+  if (id.startsWith("ats-")) return 76;
+  if (id.startsWith("ups-")) return 110;
+  if (id.startsWith("gen-") && id !== "gen-bus") return 200;
+  if (id === "gen-bus") return 56;
+  if (id.startsWith("util-")) return 56;
   if (id.startsWith("sel-")) return 38;
   if (id.startsWith("insulgard")) return 22;
   return 42;

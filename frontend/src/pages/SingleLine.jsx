@@ -87,9 +87,10 @@ function SLDCanvas({ t, selected, onSelect }) {
   const isSel = (id) => selected && selected.id === id;
 
   return (
-    <div className="card grow" style={{ padding: 0 }}>
+    <div className="card grow" style={{ padding: 0, minWidth: 0 }}>
       <div className="card-h">MV / LV LINEUP</div>
-      <div className="sld-canvas" style={{ height: SLD_H, width: "100%" }}>
+      <div className="sld-scroll">
+      <div className="sld-canvas">
         <SLDWires t={t} />
 
         {/* Sources */}
@@ -172,6 +173,7 @@ function SLDCanvas({ t, selected, onSelect }) {
 
         <Legend {...POS["legend"]} />
       </div>
+      </div>
     </div>
   );
 }
@@ -192,17 +194,17 @@ function SLDWires({ t }) {
   return (
     <svg className="sld-wires" viewBox={`0 0 ${SLD_W} ${SLD_H}`} preserveAspectRatio="none">
       {/* Utility A → MV-MAIN-A */}
-      <Wire from="util-A" fromSide="bottom" to="mv-main-A" toSide="left" live={live("mv-main-A")} route="vhv" />
+      <Wire from="util-A" fromSide="bottom" to="mv-main-A" toSide="top" live={live("mv-main-A")} />
       {/* Utility B → MV-MAIN-B */}
-      <Wire from="util-B" fromSide="bottom" to="mv-main-B" toSide="left" live={live("mv-main-B")} route="vhv" />
+      <Wire from="util-B" fromSide="bottom" to="mv-main-B" toSide="top" live={live("mv-main-B")} />
 
       {/* MV-MAIN-A → MV BUS A (vertical drop) */}
       <Wire from="mv-main-A" fromSide="bottom" to="mv-bus-A" toSide="top" live={live("mv-main-A")} />
       <Wire from="mv-main-B" fromSide="bottom" to="mv-bus-B" toSide="top" live={live("mv-main-B")} />
 
-      {/* MV-TIE between buses */}
-      <Wire from="mv-bus-A" fromSide="right" to="mv-tie" toSide="top" live={live("mv-tie")} route="hvh" />
-      <Wire from="mv-tie" fromSide="bottom" to="mv-bus-B" toSide="left" live={live("mv-tie")} route="hvh" />
+      {/* MV-TIE between buses (drops from each bus to the tie below) */}
+      <Wire from="mv-bus-A" fromSide="bottom" to="mv-tie" toSide="top" live={live("mv-tie")} />
+      <Wire from="mv-bus-B" fromSide="bottom" to="mv-tie" toSide="top" live={live("mv-tie")} />
 
       {/* Transformers fed off the MV buses */}
       {["xfmr-A1", "xfmr-A2"].map((id) => (
@@ -217,19 +219,27 @@ function SLDWires({ t }) {
         <Wire key={s} from={`xfmr-${s}`} fromSide="bottom" to={`mtz-inc-${s}`} toSide="top" live />
       ))}
 
-      {/* MTZ → LV bus → ATS chain */}
+      {/* MTZ → LV bus */}
       {["A1", "A2", "B1", "B2"].map((s) => (
         <Wire key={s} from={`mtz-inc-${s}`} fromSide="bottom" to={`lv-bus-${s}`} toSide="top"
               live={live(`mtz-inc-${s}`)} />
       ))}
-      <Wire from="lv-bus-A1" fromSide="right" to="ats-1" toSide="left" live route="hvh" />
+
+      {/* LV → ATS chain (utility-side feeders, right-routed) */}
+      <Wire from="lv-bus-A2" fromSide="right" to="ats-1" toSide="left" live route="hvh" />
       <Wire from="lv-bus-B1" fromSide="right" to="ats-2" toSide="left" live route="hvh" />
+
+      {/* ATS → UPS */}
       <Wire from="ats-1" fromSide="bottom" to="ups-A" toSide="top" live />
       <Wire from="ats-2" fromSide="bottom" to="ups-B" toSide="top" live />
 
-      {/* Gen paralleling bus → ATSes (alt source) */}
-      <Wire from="gen-bus" fromSide="bottom" to="ats-1" toSide="top" live={false} route="vhv" />
-      <Wire from="gen-bus" fromSide="bottom" to="ats-2" toSide="top" live={false} route="vhv" />
+      {/* Generators → paralleling bus (parked at top-right) */}
+      <Wire from="gen-1" fromSide="top" to="gen-bus" toSide="bottom" live={false} route="vhv" />
+      <Wire from="gen-2" fromSide="left" to="gen-bus" toSide="bottom" live={false} route="hvh" />
+
+      {/* Gen paralleling bus → ATSes (alternate source, dashed = standby) */}
+      <Wire from="gen-bus" fromSide="left" to="ats-1" toSide="right" live={false} route="hvh" />
+      <Wire from="gen-bus" fromSide="left" to="ats-2" toSide="right" live={false} route="hvh" />
     </svg>
   );
 }
