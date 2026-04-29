@@ -14,6 +14,9 @@ python_classes = "!Test*"
 filterwarnings = [
     "ignore::pytest.PytestCollectionWarning",
 ]
+markers = [
+    "hardware: requires real industrial device on the network — set HW_*_IP env vars to enable",
+]
 
 [tool.setuptools]
 packages = ["src"]

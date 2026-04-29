@@ -6,7 +6,14 @@ and data-center equipment. See `docs/` for the full specifications.
 ## Status
 
 All 23 modules built, individually unit-tested, separate files in the repo.
-**228+ tests passing.** See `tests/unit/` — one test file per module.
+
+| Test layer | Count | Location |
+| --- | --- | --- |
+| Python unit tests | 244 | `tests/unit/` (one file per module) |
+| Python integration | 12 | `tests/integration/` (full stack against simulator + real PyModbus + real PDFs) |
+| Hardware-in-the-loop | 11 | `tests/hardware/` (skipped unless `HW_*_IP` env vars set) |
+| Frontend (vitest) | 16 | `frontend/src/__tests__/` |
+| **Total green** | **272** | + 12 properly skipped (hardware + Anthropic) |
 
 ## Specs
 
@@ -81,6 +88,29 @@ cd frontend
 npm install
 npm run dev      # Vite dev server with API proxy at localhost:5173
 npm run build    # production build → frontend/build/
+npm test         # 16 vitest tests (jsdom + React Testing Library)
+```
+
+## Hardware-in-the-loop tests
+
+Tests in `tests/hardware/` skip by default. Set the relevant env var to point
+at a real device on the network:
+
+```bash
+HW_CM2000_IP=10.4.12.55 pytest tests/hardware/test_cm2000.py -v
+HW_MTZ_IP=10.4.12.61    pytest tests/hardware/test_mtz_breaker.py -v
+HW_NVML=1               pytest tests/hardware/test_nvml_real_gpu.py -v
+```
+
+See `tests/hardware/README.md` for the full env-var matrix.
+
+## Anthropic-backed Module 17 test
+
+The PDF→Config pipeline test that actually calls Claude is gated behind
+`ANTHROPIC_API_KEY`. Set the key and run:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... pytest tests/integration/test_pdf_pipeline_real_pdfs.py -v
 ```
 
 ## Spec edge-case coverage (§5)

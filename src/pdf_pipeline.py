@@ -26,6 +26,46 @@ PDFTextReader = Callable[[str | Path], str]
 LLMCompleter = Callable[[str, str], Awaitable[str]]  # (system_prompt, user_text) → JSON string
 
 
+def extract_text_pdfplumber(pdf_path: str | Path) -> str:
+    """Production-grade PDF text extractor using pdfplumber.
+
+    Handles multi-page PDFs and joins page text with double newlines so
+    section boundaries are preserved for the LLM.
+    """
+    import pdfplumber  # noqa: PLC0415 — optional dep at this point
+
+    parts: list[str] = []
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            if text.strip():
+                parts.append(text)
+    return "\n\n".join(parts)
+
+
+async def llm_anthropic(system_prompt: str, user_text: str, *, model: str = "claude-sonnet-4-5") -> str:
+    """Production LLM caller using the Anthropic SDK.
+
+    Reads ANTHROPIC_API_KEY from the environment. Raises RuntimeError if
+    the key is unset (so the caller can decide whether to fall back to
+    a fixture in test environments).
+    """
+    import os  # noqa: PLC0415
+
+    import anthropic  # noqa: PLC0415
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    client = anthropic.AsyncAnthropic()
+    msg = await client.messages.create(
+        model=model,
+        max_tokens=4096,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_text}],
+    )
+    return "".join(block.text for block in msg.content if hasattr(block, "text"))
+
+
 SYSTEM_PROMPT = """You are extracting a Modbus/BACnet/SNMP/Redfish device Config Context
 from a manufacturer PDF. Output exactly one JSON object matching this schema:
 
