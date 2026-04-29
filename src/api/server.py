@@ -53,6 +53,10 @@ class Deps:
     facility_test_runs: list[dict] = field(default_factory=list)
     facility_checklists: dict = field(default_factory=dict)
     discovery_state: dict = field(default_factory=dict)
+    # Live telemetry callable (returns a dict ready for JSON). dev_server
+    # wires this to simulator.telemetry.live_telemetry(); production wires
+    # it to InfluxDB recent reads.
+    telemetry_provider: Any = None
     # SSE fan-out — registered listeners get every event.
     _sse_subscribers: set[asyncio.Queue[Event]] = field(default_factory=set)
 
@@ -306,6 +310,19 @@ def create_app(deps: Deps) -> FastAPI:
     async def checklist_get(device_id: str):
         items = deps.facility_checklists.get(device_id, [])
         return {"items": items}
+
+    # ------------------------------------------------------------------
+    # Live telemetry — drives the SLD / relay console / SOE banner
+    # ------------------------------------------------------------------
+
+    @app.get("/api/v1/telemetry", dependencies=[Depends(auth)])
+    async def telemetry():
+        if deps.telemetry_provider is None:
+            return {
+                "timestamp": "", "breakers": {}, "buses": {}, "relays": {},
+                "xfmrs": {}, "gens": {}, "upses": {}, "soe": [],
+            }
+        return deps.telemetry_provider()
 
     return app
 

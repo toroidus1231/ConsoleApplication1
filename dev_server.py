@@ -30,6 +30,7 @@ from simulator.sim import (
     UPS_REG_TEST_INITIATE,
     UPSSimulator,
 )
+from simulator.telemetry import live_telemetry, push_soe, telemetry_to_dict
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +473,22 @@ async def main():
 
     await _seed_attestation_chain(attest, devices)
 
+    # Seed sequence-of-events log so the alarm banner has real content.
+    push_soe("critical", "xfmr-A1",
+             "DGA: acetylene 3.4 ppm — active arcing per spec §3.5. STOP energization.")
+    push_soe("alarm", "mv-main-A",
+             "Cable hipot leakage exceeded 0.5 mA at 80% rated voltage. Breaker locked out.")
+    push_soe("alarm", "insulgard-mv-A",
+             "PD magnitude 84 pC trending +35% / 24h.")
+    push_soe("warn", "sel-mv-main-A",
+             "51 PHASE TOC pickup 510 A (threshold 480 A) — clearing.")
+    push_soe("info", "ats-1",
+             "ATS transfer test scheduled 09:30 UTC (manual confirmation pending).")
+    push_soe("info", "gen-1",
+             "Standby — ready. Last load-bank test PASS @ 04:18 UTC.")
+    push_soe("warn", "cm2000-A1-F1",
+             "Sensor drift: 13.9% off Fluke 8508A reference (cert sha256:f8508a-2026-q2).")
+
     # Match attestation hashes to punch-list evidence_hash so the modal can
     # resolve real chain records (replace the random hashes with real ones).
     real_hashes = []
@@ -519,6 +536,7 @@ async def main():
                 ],
             }
         },
+        telemetry_provider=lambda: telemetry_to_dict(live_telemetry(devices, runs)),
     )
     app = create_app(deps)
 

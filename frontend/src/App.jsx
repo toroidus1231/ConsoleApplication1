@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Routes, Route, NavLink, Navigate } from "react-router-dom";
 import {
   Activity, BarChart3, Boxes, FileBarChart, FileSearch, Network,
-  ScrollText, ShieldCheck, Upload, Server, Wifi,
+  ScrollText, ShieldCheck, Upload, Server, Wifi, Zap, Cpu,
 } from "lucide-react";
 import Dashboard from "./pages/Dashboard";
 import Devices from "./pages/Devices";
@@ -17,10 +17,13 @@ import ImportPage from "./pages/ImportPage";
 import PowerGraph from "./pages/PowerGraph";
 import Discovery from "./pages/Discovery";
 import Racks from "./pages/Racks";
+import SingleLine from "./pages/SingleLine";
+import RelayConsole from "./pages/RelayConsole";
 import { useSSE } from "./hooks/useSSE";
 
 const NAV = [
   { to: "/",            label: "Overview",   icon: Activity, end: true },
+  { to: "/sld",         label: "SLD",        icon: Zap },
   { to: "/discovery",   label: "Discovery",  icon: Wifi },
   { to: "/devices",     label: "Devices",    icon: Server },
   { to: "/racks",       label: "Racks",      icon: Boxes },
@@ -44,6 +47,8 @@ export default function App() {
       <main className="app-main">
         <Routes>
           <Route path="/"            element={<Dashboard />} />
+          <Route path="/sld"         element={<SingleLine />} />
+          <Route path="/relays/:id"  element={<RelayConsole />} />
           <Route path="/discovery"   element={<Discovery />} />
           <Route path="/devices"     element={<Devices />} />
           <Route path="/racks"       element={<Racks />} />
