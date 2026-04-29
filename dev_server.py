@@ -86,13 +86,81 @@ class DemoReconciliation:
 
 
 def punchlist_for(devices, runs):
-    """Synthesize a realistic punch list from the twin: failed tests get
-    critical/major rows, model mismatches and discovery anomalies fill in
-    the rest."""
+    """Synthesize a realistic punch list from the twin: failed electrical
+    commissioning tests get critical/major rows with test-specific
+    remediation text matching what an actual commissioning engineer would
+    write up."""
     from src.reconciliation import CrossReading, check_sensor_drift  # noqa: PLC0415
 
+    # Critical (safety-impacting) tests vs major (non-safety) per spec §5.2.
+    SAFETY_TESTS = {
+        "ats_transfer", "breaker_trip_timing", "ups_battery_transfer",
+        "sel_primary_injection", "generator_paralleling", "black_start",
+        "cable_hipot",
+    }
+
+    # Test-specific remediation strings — same level of detail a CX engineer
+    # would write up after a failed test.
+    REMEDIATION = {
+        "cable_hipot":
+            "Hipot leakage exceeded 0.5 mA at 80% rated voltage. "
+            "Megger insulation, check terminations for tracking, "
+            "re-test before energizing.",
+        "megger_insulation":
+            "Insulation resistance below 100 MΩ at 1000 VDC. "
+            "Verify dryness (PI test), inspect for moisture ingress, "
+            "consider drying out before re-test.",
+        "transformer_turns_ratio":
+            "TTR deviation >0.5% from nameplate. Verify tap changer "
+            "position, inspect for shorted turns, contact manufacturer.",
+        "doble_power_factor":
+            "Doble power factor >1% on bushing C1. Schedule bushing "
+            "replacement at next outage; trend at 6-month intervals.",
+        "polarization_index":
+            "PI ratio <2.0 indicates damp insulation. Run heater 24h, "
+            "re-test. If PI still <2.0, send winding for cleaning.",
+        "dga_initial_sample":
+            "Acetylene >2 ppm in initial sample — active arcing. "
+            "STOP energization. Sample again in 24h. Escalate to OEM.",
+        "sel_secondary_injection":
+            "Pickup current 5% off relay setting. Re-verify SET M "
+            "config matches coordination study, re-inject.",
+        "sel_primary_injection":
+            "Trip time outside +/-2 cycles of coordination study. "
+            "Verify CT polarity and ratio, re-inject.",
+        "breaker_contact_resistance":
+            "Contact resistance >50 µΩ. Inspect contacts for pitting, "
+            "polish or replace, re-test with Doble Vanguard.",
+        "breaker_trip_timing":
+            "Trip time exceeded 5 cycles target. Mechanism inspection "
+            "required: check spring charge, latch wear, lubrication.",
+        "ats_transfer":
+            "ATS failed to transfer within 10s of utility loss. Verify "
+            "controller logic, generator ready signal, transfer "
+            "interlock. Coordinate with downstream UPS verification "
+            "(spec §4.3).",
+        "ups_battery_transfer":
+            "Output voltage dropped below 228V during transfer. Battery "
+            "string load test required; replace cells failing >20% "
+            "capacity. Re-test transfer.",
+        "generator_load_bank":
+            "Failed to hold rated load for 4h continuous. Check fuel "
+            "delivery, cooling system, exhaust backpressure. Trend "
+            "exhaust temps and re-test.",
+        "generator_paralleling":
+            "Sync check failed: voltage/frequency outside +/-2% / +/-0.2 Hz "
+            "for >5s. Verify governor and AVR tuning per OEM startup "
+            "settings.",
+        "black_start":
+            "Black-start sequence failed: gen 2 did not assume load "
+            "within 30s of gen 1 paralleling. Verify load-sharing "
+            "controller, breaker close-permissive logic.",
+        "ground_grid_resistance":
+            "Fall-of-potential measurement >5Ω. Verify ground grid "
+            "bonding, add supplemental rods, re-test before energizing.",
+    }
+
     items = []
-    SAFETY_TESTS = {"ups_battery_transfer", "ats_transfer", "breaker_trip"}
     for r in runs:
         if r.status == "passed":
             continue
@@ -109,41 +177,57 @@ def punchlist_for(devices, runs):
             source="active_test",
             evidence_hash=r.evidence_hashes[0] if r.evidence_hashes else None,
             test_id=r.test_id,
-            remediation=f"Investigate failure of {r.test_name}.",
+            remediation=REMEDIATION.get(r.test_name, f"Investigate failure of {r.test_name}."),
         ))
 
-    # A handful of design-vs-actual findings for variety
+    # Design-vs-actual findings for the switchgear lineup
     items.append(PunchListItem(
         severity="critical", category="identity",
-        device_id="srv-A1-09", device_name="dgx-h100-A1-09",
-        site="DC1-Ashburn", rack="A1",
-        expected="dgx-h100", actual="NOT FOUND",
+        device_id="sel-mv-tie-spare", device_name="SEL-751 · MV Tie spare",
+        site="DC1-Ashburn", rack="MV-T",
+        expected="sel-751", actual="NOT FOUND",
         source="reconciliation",
-        remediation="Server in design but not discovered. Verify network and BMC.",
+        remediation="Spare protective relay specified in coordination "
+                    "study not installed in switchgear cubicle. "
+                    "Coordinate with switchgear OEM for retrofit.",
     ))
     items.append(PunchListItem(
         severity="major", category="firmware",
-        device_id="cm2000-A1", device_name="cm2000-A1",
-        site="DC1-Ashburn", rack="A1",
-        expected="3.2.1", actual="2.0.0",
+        device_id="sel-mv-main-A", device_name="SEL-751 · MV Main A",
+        site="DC1-Ashburn", rack="MV-A",
+        expected="R109-V1", actual="R107-V0",
         source="reconciliation",
-        remediation="Update CM2000 firmware to 3.2.1.",
+        remediation="SEL-751 firmware below coordination-study reference. "
+                    "Schedule firmware upgrade to R109-V1 during planned "
+                    "outage (requires re-injection per IEEE C37.230).",
+    ))
+    items.append(PunchListItem(
+        severity="major", category="power",
+        device_id="cm2000-A1-F3", device_name="CM2000 · A1-F3",
+        site="DC1-Ashburn", rack="LV-A1",
+        expected="mtz-fdr-A1-F3", actual="mtz-fdr-A1-F4",
+        source="reconciliation",
+        remediation="Power meter wired to wrong feeder per cable "
+                    "schedule. Re-terminate CT secondaries per drawing "
+                    "E-301 rev C.",
     ))
     items.append(PunchListItem(
         severity="minor", category="firmware",
-        device_id="ups-A", device_name="ups-A",
-        site="DC1-Ashburn", rack="UPS-A",
+        device_id="opt100-A1", device_name="Vaisala OPT100 · XFMR A1",
+        site="DC1-Ashburn", rack="XFMR-A",
         expected="2.5.0", actual="2.4.9",
         source="reconciliation",
-        remediation="Symmetra firmware patch available.",
+        remediation="Vendor firmware patch available — improves H2/CO "
+                    "cross-sensitivity. Apply at next maintenance window.",
     ))
     items.append(PunchListItem(
         severity="info", category="identity",
-        device_id="unknown-N3-99", device_name="unknown-N3-99",
-        site="DC1-Ashburn", rack="N3",
-        expected="NOT IN DESIGN", actual="ex4300",
+        device_id="unknown-NB-MV", device_name="Unknown device on MV-B subnet",
+        site="DC1-Ashburn", rack="MV-B",
+        expected="NOT IN DESIGN", actual="schneider-rmu",
         source="discovery",
-        remediation="Discovered Juniper switch not in BIM design.",
+        remediation="Discovered Schneider RMU not in BIM design — "
+                    "likely vendor add-on. Update single-line drawing.",
     ))
 
     # Sensor-drift findings from the bench-instrument cross-validation
@@ -152,50 +236,87 @@ def punchlist_for(devices, runs):
     # permanent CM2000-A1 voltage sensor — divergence flagged by
     # check_sensor_drift().
     drift_readings = [
+        # CM2000 on feeder A1-F1 reads 412V vs Fluke 8508A reference 478.4V
+        # clamped to the same bus during commissioning sweep.
         CrossReading(
-            physical_link="bus-A1.voltage_ll_avg",
-            primary_device_id="cm2000-A1",
-            primary_device_name="cm2000-A1",
+            physical_link="lv-bus-A1.voltage_ll_avg @ feeder F1 CT",
+            primary_device_id="cm2000-A1-F1",
+            primary_device_name="CM2000 · A1-F1",
             primary_reading=412.0,
             primary_timestamp_ns=1_712_847_600_000_000_000,
             primary_unit="V",
             reference_device_id="fluke-8508a-bench",
-            reference_device_name="Fluke 8508A (cal cert sha256:f8508a-2026-q2)",
+            reference_device_name="Fluke 8508A bench DMM",
             reference_reading=478.4,
             reference_timestamp_ns=1_712_847_600_000_500_000,
             reference_calibration_cert="sha256:f8508a-2026-q2",
         ),
+        # Smaller drift on a different feeder
         CrossReading(
-            physical_link="bus-B1.voltage_ll_avg",
-            primary_device_id="cm2000-B1",
-            primary_device_name="cm2000-B1",
+            physical_link="lv-bus-B1.voltage_ll_avg @ feeder F2 CT",
+            primary_device_id="cm2000-B1-F2",
+            primary_device_name="CM2000 · B1-F2",
             primary_reading=480.7,
             primary_timestamp_ns=1_712_847_600_000_000_000,
             primary_unit="V",
             reference_device_id="fluke-8508a-bench",
-            reference_device_name="Fluke 8508A (cal cert sha256:f8508a-2026-q2)",
-            reference_reading=489.5,  # 1.83% drift -> minor
+            reference_device_name="Fluke 8508A bench DMM",
+            reference_reading=489.5,
             reference_timestamp_ns=1_712_847_600_000_500_000,
             reference_calibration_cert="sha256:f8508a-2026-q2",
         ),
     ]
     items.extend(check_sensor_drift(drift_readings))
 
-    # Hipot test result attested via the SCPI poller (Vitrek 95X). The
-    # hipot ran on cable-run-A1, leakage stayed within tolerance during
-    # the 60s hold at 2.5 kV, but trend-tracking shows leakage trending
-    # up over the last three commissioning runs — minor for now.
+    # Hipot test result attested via the SCPI poller (Vitrek 95X). MV cable
+    # run between MV Main A and XFMR-A1 — leakage trending up across the
+    # last three commissioning runs but still within tolerance.
     items.append(PunchListItem(
         severity="minor", category="insulation",
-        device_id="cable-A1-trunk", device_name="cable-A1-trunk",
-        site="DC1-Ashburn", rack="A1",
-        expected="leakage <= 0.5 mA at 2.5 kV (Vitrek 95X cert sha256:vitrek-2026-q2)",
-        actual="0.42 mA at 2.5 kV (last 3 runs: 0.31 → 0.37 → 0.42 mA)",
+        device_id="cable-mv-main-A-to-xfmr-A1",
+        device_name="MV cable: MV Main A → XFMR A1",
+        site="DC1-Ashburn", rack="MV-A",
+        expected="leakage <= 0.5 mA at 80% rated (Vitrek 95X cert sha256:vitrek-2026-q2)",
+        actual="0.42 mA at 11.04 kV (last 3 runs: 0.31 → 0.37 → 0.42 mA)",
         source="active_test",
         remediation=(
-            "Hipot result still within tolerance but leakage is trending "
-            "up — schedule a Megger insulation test at next maintenance "
-            "window."
+            "Hipot result within tolerance but leakage trending up. "
+            "Schedule Megger PI test at next maintenance window; "
+            "inspect cable terminations for tracking."
+        ),
+    ))
+
+    # Eaton InsulGard PD activity flagged on MV Bus A — partial discharge
+    # magnitude rising over 24h trend. Per spec §3.4 evaluation rules.
+    items.append(PunchListItem(
+        severity="major", category="insulation",
+        device_id="insulgard-mv-A",
+        device_name="InsulGard PD · MV Bus A",
+        site="DC1-Ashburn", rack="MV-A",
+        expected="pd_magnitude_max <= 50 pC, no upward trend",
+        actual="pd_magnitude_max = 84 pC, +35% over 24h",
+        source="passive_read",
+        remediation=(
+            "PD activity rising on MV Bus A. Suspect cable joint or "
+            "support insulator. Schedule offline PD scan at next outage; "
+            "tag for visual inspection in switchgear cubicle."
+        ),
+    ))
+
+    # DGA on XFMR-A1 — acetylene above warning threshold, possible arcing
+    items.append(PunchListItem(
+        severity="critical", category="insulation",
+        device_id="opt100-A1",
+        device_name="Vaisala OPT100 DGA · XFMR A1",
+        site="DC1-Ashburn", rack="XFMR-A",
+        expected="acetylene <= 2 ppm (spec §3.5: >2 ppm = active arcing)",
+        actual="acetylene = 3.4 ppm",
+        source="passive_read",
+        remediation=(
+            "STOP all active testing on XFMR-A1. Acetylene >2 ppm "
+            "indicates active arcing per spec §3.5. Pull manual oil "
+            "sample, send to lab for gas-in-oil + furan analysis. "
+            "Coordinate de-energization with utility."
         ),
     ))
 

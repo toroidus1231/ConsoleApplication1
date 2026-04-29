@@ -17,14 +17,26 @@ import { api } from "../hooks/useApi";
 // in tiers using their "device_type" so the chain is readable.
 
 const TIER_BY_TYPE = {
-  utility: 0, "cat-3516": 0,
-  "asco-7000": 1,
-  "apc-symmetra": 2,
-  "apc-rack-pdu": 3,
-  cm2000: 4, "dgx-h100": 4,
+  // Tier 0 — utility + standby gen
+  "utility-mv": 0, "cat-3516b": 0, "cat-3516": 0, utility: 0,
+  // Tier 1 — MV switchgear (mains, tie, paralleling bus)
+  "schneider-gma-1200a": 1, "paralleling-switchgear": 1,
+  // Tier 2 — protection + monitoring on MV (relays, PD)
+  "sel-751": 2, "eaton-insulgard": 2,
+  // Tier 3 — transformers + their monitors
+  "oil-xfmr-2500kva": 3, "vaisala-opt100": 3, "qualitrol-118itm": 3,
+  // Tier 4 — LV switchgear (incoming + tie + ATS)
+  "schneider-mtz-4000a": 4, "asco-7000": 4,
+  // Tier 5 — UPS systems
+  "apc-symmetra-mw": 5, "apc-symmetra": 5,
+  // Tier 6 — feeders + metering
+  "schneider-mtz-1200a": 6, cm2000: 6,
 };
 
-const TIER_LABELS = ["Utility / Gen", "ATS", "UPS", "PDU", "Branch"];
+const TIER_LABELS = [
+  "Utility / Gen", "MV Switchgear", "Protection / PD",
+  "Transformers", "LV Main / ATS", "UPS", "Feeders / Metering",
+];
 
 function laidOut(graph) {
   const tiers = {};
