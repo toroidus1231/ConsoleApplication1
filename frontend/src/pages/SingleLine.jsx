@@ -7,6 +7,7 @@ import {
   ATSCard, UPSCard, GenCard, Legend,
 } from "./sld_cards";
 import { Wire } from "./sld_wires";
+import EquipmentHMI from "./EquipmentHMI";
 
 const REFRESH_MS = 1000;
 
@@ -249,14 +250,16 @@ function SLDWires({ t }) {
 // ---------------------------------------------------------------------------
 
 function DetailPanel({ t, selected, navigate }) {
+  const [view, setView] = useState("schematic");
+
   if (!selected) {
     return (
-      <div className="card" style={{ width: 320, padding: 0 }}>
+      <div className="card" style={{ width: 340, padding: 0 }}>
         <div className="card-h">SELECTION</div>
         <div className="card-body">
           <p style={{ color: "var(--text-tertiary)", margin: 0, fontSize: 12 }}>
-            Click any element on the SLD to inspect its live values and open the
-            equipment console.
+            Click any element on the SLD to inspect its live values, flip to a
+            literal HMI view of the gear, or open the full equipment console.
           </p>
         </div>
       </div>
@@ -271,18 +274,52 @@ function DetailPanel({ t, selected, navigate }) {
     </button>
   );
 
+  const data =
+      type === "bus"     ? t.buses[id]
+    : type === "breaker" ? t.breakers[id]
+    : type === "xfmr"    ? t.xfmrs[id]
+    : type === "ups"     ? t.upses[id]
+    : type === "gen"     ? t.gens[id]
+    : type === "relay"   ? t.relays[id]
+    : null;
+
+  const showEquip = view === "equipment";
+
   return (
-    <div className="card" style={{ width: 320, padding: 0 }}>
-      <div className="card-h">{(type + " · " + id).toUpperCase()}</div>
-      <div className="card-body">
-        {type === "bus"     && <BusBody bus={t.buses[id]} />}
-        {type === "breaker" && <BreakerBody brk={t.breakers[id]} />}
-        {type === "xfmr"    && <><XfmrBody x={t.xfmrs[id]} />{open(`/xfmr/${id}`)}</>}
-        {type === "ups"     && <><UpsBody u={t.upses[id]} />{open(`/ups/${id}`)}</>}
-        {type === "gen"     && <><GenBody g={t.gens[id]} />{open(`/gens/${id}`)}</>}
-        {type === "ats"     && <>{open(`/ats/${id}`)}</>}
-        {type === "relay"   && <>{open(`/relays/${id}`)}</>}
+    <div className="card" style={{ width: 340, padding: 0 }}>
+      <div className="card-h" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>{(type + " · " + id).toUpperCase()}</span>
+        <ViewToggle view={view} setView={setView} />
       </div>
+      <div className="card-body">
+        {showEquip ? (
+          <EquipmentHMI type={type} id={id} data={data} />
+        ) : (
+          <>
+            {type === "bus"     && <BusBody bus={t.buses[id]} />}
+            {type === "breaker" && <BreakerBody brk={t.breakers[id]} />}
+            {type === "xfmr"    && <XfmrBody x={t.xfmrs[id]} />}
+            {type === "ups"     && <UpsBody u={t.upses[id]} />}
+            {type === "gen"     && <GenBody g={t.gens[id]} />}
+          </>
+        )}
+        {type === "xfmr"  && open(`/xfmr/${id}`)}
+        {type === "ups"   && open(`/ups/${id}`)}
+        {type === "gen"   && open(`/gens/${id}`)}
+        {type === "ats"   && open(`/ats/${id}`)}
+        {type === "relay" && open(`/relays/${id}`)}
+      </div>
+    </div>
+  );
+}
+
+function ViewToggle({ view, setView }) {
+  return (
+    <div className="view-toggle">
+      <button className={view === "schematic" ? "vt active" : "vt"}
+              onClick={() => setView("schematic")}>SCHEMATIC</button>
+      <button className={view === "equipment" ? "vt active" : "vt"}
+              onClick={() => setView("equipment")}>EQUIPMENT</button>
     </div>
   );
 }
