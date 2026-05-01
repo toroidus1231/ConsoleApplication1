@@ -104,6 +104,61 @@ def ats_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
     return dict(runs[-1])
 
 
+def busway_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
+    """Aggregate the three instrument-driven busway tests + manual
+    sign-offs into one panel record. Manual sign-offs are stored under
+    test_name='busway_manual' just like the instrument runs, so the
+    panel reads everything via one EvidenceStore interface."""
+    megger_runs = store.list_runs(device_id, "busway_megger")
+    hipot_runs  = store.list_runs(device_id, "busway_hipot")
+    dlro_runs   = store.list_runs(device_id, "busway_dlro")
+    manual_runs = store.list_runs(device_id, "busway_manual")
+    if not (megger_runs or hipot_runs or dlro_runs):
+        return _no_prior_run(device_id, "busway", "busway_acceptance")
+
+    def _trend(runs, key):
+        if not runs:
+            return []
+        latest_at = _parse_iso(runs[-1]["completed_at"])
+        out = []
+        for r in runs[:-1]:
+            delta = (_parse_iso(r["completed_at"]) - latest_at).days
+            out.append({"date_offset_days": delta,
+                        "value": r.get(key),
+                        "passed": r["passed"]})
+        out.sort(key=lambda x: x["date_offset_days"])
+        return out
+
+    megger = megger_runs[-1] if megger_runs else None
+    hipot  = hipot_runs[-1]  if hipot_runs  else None
+    dlro   = dlro_runs[-1]   if dlro_runs   else None
+    manual = manual_runs[-1] if manual_runs else None
+    signoffs = (manual or {}).get("signoffs", {}) if manual else {}
+
+    instrument_passed = all(r["passed"] for r in (megger, hipot, dlro) if r)
+    manual_passed = all(s["passed"] for s in signoffs.values()) if signoffs else False
+    auto_count = sum(1 for r in (megger, hipot, dlro) if r)
+    manual_count = len(signoffs)
+    total = auto_count + manual_count
+    return {
+        "device_id": device_id,
+        "kind": "busway",
+        "megger": megger,
+        "megger_history": _trend(megger_runs, "min_megohm"),
+        "hipot": hipot,
+        "hipot_history": _trend(hipot_runs, "peak_leakage_ma"),
+        "dlro": dlro,
+        "dlro_history": _trend(dlro_runs, "max_joint_uohm"),
+        "manual_signoffs": signoffs,
+        "passed": instrument_passed and manual_passed,
+        "automation_summary": {
+            "automated_steps": auto_count,
+            "manual_steps": manual_count,
+            "automated_pct": round(auto_count / total * 100, 1) if total else 0.0,
+        },
+    }
+
+
 _KIND_DISPATCH = {
     "hipot": hipot_panel,
     "cable": hipot_panel,
@@ -113,6 +168,7 @@ _KIND_DISPATCH = {
     "gen": generator_panel,
     "ups": ups_panel,
     "ats": ats_panel,
+    "busway": busway_panel,
 }
 
 

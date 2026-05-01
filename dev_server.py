@@ -20,6 +20,10 @@ from fastapi.staticfiles import StaticFiles
 from src.api.server import Deps, create_app, fanout_loop
 from src.attestation import AttestationEngine
 from src.equipment_models.ats import ATSSpec, ats_run_record
+from src.equipment_models.busway import (
+    BuswaySpec, dlro_run_record, hipot_run_record as busway_hipot_record,
+    manual_signoffs as busway_signoffs, megger_run_record,
+)
 from src.equipment_models.cable import CableSpec, hipot_run_record
 from src.equipment_models.generator import GeneratorSpec, generator_run_record
 from src.equipment_models.transformer import TransformerSpec, transformer_run_record
@@ -478,6 +482,53 @@ def _build_equipment_registry(today: datetime) -> EquipmentRegistry:
             upstream_gen=reg.generators["gen-1"],
             downstream_ups=[reg.upses["ups-A"], reg.upses["ups-B"]])
 
+    # Vertiv busway lineup. Representative sample of what a 500 MW DC
+    # would have — UPS-output feeders (MTG 4000A), row mains (MTG 3200A),
+    # rack branches (PowerBar iMPB 1250A). install_year staggered to
+    # show different ageing states across the panel.
+    reg.busways["mtg-feed-A"] = BuswaySpec(
+        busway_id="mtg-feed-A", rated_amps=4000, voltage_class_v=600,
+        length_m=42.0, manufacturer="Vertiv", model="MTG",
+        install_year=2022, install_month=6,
+        initial_megohm=8_000.0, aging_per_year=0.025,
+        initial_joint_uohm=18.0, joint_acceptance_uohm=30.0,
+        torque_spec_ftlb=60.0, hipot_kv=2.5)
+    reg.busways["mtg-feed-B"] = BuswaySpec(
+        busway_id="mtg-feed-B", rated_amps=4000, voltage_class_v=600,
+        length_m=42.0, manufacturer="Vertiv", model="MTG",
+        install_year=2022, install_month=6,
+        initial_megohm=8_000.0, aging_per_year=0.025,
+        initial_joint_uohm=18.0, joint_acceptance_uohm=30.0,
+        torque_spec_ftlb=60.0, hipot_kv=2.5)
+    reg.busways["mtg-row-A1"] = BuswaySpec(
+        busway_id="mtg-row-A1", rated_amps=3200, voltage_class_v=600,
+        length_m=36.0, manufacturer="Vertiv", model="MTG",
+        install_year=2022, install_month=8,
+        initial_megohm=6_500.0, aging_per_year=0.025,
+        initial_joint_uohm=20.0, joint_acceptance_uohm=30.0,
+        torque_spec_ftlb=60.0, hipot_kv=2.5)
+    reg.busways["mtg-row-A2"] = BuswaySpec(
+        busway_id="mtg-row-A2", rated_amps=3200, voltage_class_v=600,
+        length_m=36.0, manufacturer="Vertiv", model="MTG",
+        install_year=2022, install_month=8,
+        initial_megohm=6_500.0, aging_per_year=0.025,
+        initial_joint_uohm=20.0, joint_acceptance_uohm=30.0,
+        torque_spec_ftlb=60.0, hipot_kv=2.5)
+    reg.busways["impb-rack-A1-01"] = BuswaySpec(
+        busway_id="impb-rack-A1-01", rated_amps=1250, voltage_class_v=600,
+        length_m=24.0, manufacturer="Vertiv", model="PowerBar iMPB",
+        install_year=2023, install_month=2,
+        initial_megohm=4_000.0, aging_per_year=0.020,
+        initial_joint_uohm=22.0, joint_acceptance_uohm=25.0,
+        torque_spec_ftlb=35.0, hipot_kv=2.5)
+    reg.busways["impb-rack-A1-02"] = BuswaySpec(
+        busway_id="impb-rack-A1-02", rated_amps=1250, voltage_class_v=600,
+        length_m=24.0, manufacturer="Vertiv", model="PowerBar iMPB",
+        install_year=2023, install_month=2,
+        initial_megohm=4_000.0, aging_per_year=0.020,
+        initial_joint_uohm=22.0, joint_acceptance_uohm=25.0,
+        torque_spec_ftlb=35.0, hipot_kv=2.5)
+
     return reg
 
 
@@ -505,6 +556,20 @@ def _seed_evidence_store(store, registry: EquipmentRegistry, today: datetime):
         for days_ago in (180, 90, 30, 0):
             store.put(ats_id, "ats_transfer",
                       ats_run_record(spec, today - timedelta(days=days_ago)))
+    # Busway: three instrument tests + one manual sign-off bundle per run
+    for busway_id, spec in registry.busways.items():
+        for days_ago in (270, 180, 90, 0):
+            run_at = today - timedelta(days=days_ago)
+            store.put(busway_id, "busway_megger", megger_run_record(spec, run_at))
+            store.put(busway_id, "busway_hipot", busway_hipot_record(spec, run_at))
+            store.put(busway_id, "busway_dlro", dlro_run_record(spec, run_at))
+            store.put(busway_id, "busway_manual", {
+                "device_id": busway_id,
+                "test_type": "busway_manual_signoffs",
+                "signoffs": busway_signoffs(spec, run_at),
+                "completed_at": run_at.isoformat(),
+                "passed": True,
+            })
 
 
 def _equipment_provider(evidence_store):

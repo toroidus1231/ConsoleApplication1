@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .equipment_models.ats import ATSSpec
+from .equipment_models.busway import BuswaySpec
 from .equipment_models.cable import CableSpec
 from .equipment_models.generator import GeneratorSpec
 from .equipment_models.transformer import TransformerSpec
@@ -26,3 +27,4 @@ class EquipmentRegistry:
     generators: dict[str, GeneratorSpec] = field(default_factory=dict)
     upses: dict[str, UPSSpec] = field(default_factory=dict)
     ats_units: dict[str, ATSSpec] = field(default_factory=dict)
+    busways: dict[str, BuswaySpec] = field(default_factory=dict)

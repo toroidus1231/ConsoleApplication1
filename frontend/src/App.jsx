@@ -24,6 +24,7 @@ import GeneratorConsole from "./pages/GeneratorConsole";
 import UpsConsole from "./pages/UpsConsole";
 import HipotConsole from "./pages/HipotConsole";
 import AtsConsole from "./pages/AtsConsole";
+import BuswayConsole from "./pages/BuswayConsole";
 import { useSSE } from "./hooks/useSSE";
 import { api } from "./hooks/useApi";
 
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="/ups/:id"     element={<UpsConsole />} />
             <Route path="/hipot/:id"   element={<HipotConsole />} />
             <Route path="/ats/:id"     element={<AtsConsole />} />
+            <Route path="/busway/:id"  element={<BuswayConsole />} />
             <Route path="/discovery"   element={<Discovery />} />
             <Route path="/devices"     element={<Devices />} />
             <Route path="/racks"       element={<Racks />} />
