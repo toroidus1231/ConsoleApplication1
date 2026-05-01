@@ -19,6 +19,26 @@ export default function HipotConsole() {
   }, [id]);
 
   if (!rec) return <p style={{ color: "var(--text-faint)" }}>Loading…</p>;
+  if (rec.no_prior_run) {
+    return (
+      <>
+        <div className="page-header">
+          <h1>Cable Hipot · {id}</h1>
+          <span className="crumb">
+            <Link to="/sld" style={{ color: "var(--text-faint)" }}>SLD</Link>
+            {" / "}no prior run on file
+          </span>
+        </div>
+        <div className="card padded">
+          <p style={{ color: "var(--text-secondary)" }}>
+            No DC hipot test has been recorded for <code>{id}</code>.
+            Schedule a run from the Active Tests page or via the
+            commissioning checklist.
+          </p>
+        </div>
+      </>
+    );
+  }
   const trace = rec.trace.filter((_, i) => i % 4 === 0); // decimate
   const peak = Math.max(...rec.trace.map(p => p.leakage_ma));
 

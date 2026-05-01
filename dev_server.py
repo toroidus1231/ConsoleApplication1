@@ -11,6 +11,7 @@ import asyncio
 import math
 import random
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import uvicorn
@@ -18,6 +19,9 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.server import Deps, create_app, fanout_loop
 from src.attestation import AttestationEngine
+from src.equipment_models.cable import CableSpec, hipot_run_record
+from src.equipment_views import build_panel as build_equipment_panel
+from src.evidence_store import InMemoryEvidenceStore
 from src.orchestrator import Orchestrator, build_power_graph_from_connections
 from src.test_engine import TestEngine
 from src.types import AttestationRecord, DeviceInfo, Event, PollResult, PunchListItem, TestRequest
@@ -33,7 +37,6 @@ from simulator.sim import (
 from simulator.telemetry import live_telemetry, push_soe, telemetry_to_dict
 from simulator.equipment_records import (
     ats_record,
-    cable_hipot_record,
     generator_record,
     transformer_record,
     ups_record,
@@ -428,13 +431,63 @@ def _build_bridge(simulator):
 # ---------------------------------------------------------------------------
 
 
-def _equipment_provider():
+def _seed_hipot_runs(store, devices):
+    """Generate a chronological series of hipot runs for every breaker
+    that has an associated MV/LV cable, all derived from a single
+    CableSpec per cable + a deterministic ageing model. Both current
+    peak and historical peaks therefore lie on one degradation curve.
+
+    In production these records arrive via test_engine.execute() writing
+    its TestResult evidence to the store. The shape and the API path are
+    identical."""
+    breaker_slugs = {
+        "schneider-gma-1200a",   # MV 1200A
+        "schneider-mtz-1200a",   # LV incomer 1200A (some sites)
+        "schneider-mtz-4000a",   # LV incomer 4000A
+    }
+    # Per-cable spec. In production these values come from the cable
+    # schedule (length, jacket, install date). The (initial_megohm,
+    # aging_per_year) pair is sized so leakage at rated test voltage
+    # lands in the 0.05–0.15 mA band — visible on the chart, well below
+    # the IEEE 400.2 0.5 mA trip threshold.
+    cables_by_install_year = {
+        "mv-main-A":  (13.8, 2017, 220.0, 0.045),
+        "mv-main-B":  (13.8, 2017, 220.0, 0.045),
+        "mv-tie":     (13.8, 2017, 220.0, 0.045),
+        "mtz-inc-A1": (0.48, 2021, 380.0, 0.030),
+        "mtz-inc-A2": (0.48, 2021, 380.0, 0.030),
+        "mtz-inc-B1": (0.48, 2021, 380.0, 0.030),
+        "mtz-inc-B2": (0.48, 2021, 380.0, 0.030),
+    }
+    today = datetime(2026, 5, 1)
+    for d in devices:
+        if d.device_type_slug not in breaker_slugs:
+            continue
+        cable_id = d.device_id
+        if cable_id not in cables_by_install_year:
+            continue
+        rated_kv, install_year, initial_megohm, age = cables_by_install_year[cable_id]
+        spec = CableSpec(
+            cable_id=cable_id,
+            rated_kv=rated_kv,
+            install_year=install_year,
+            initial_megohm=initial_megohm,
+            aging_per_year=age,
+        )
+        # Three historical runs (acceptance, 6-month, 3-month) plus today.
+        for days_ago in (540, 180, 90, 1):
+            run_date = today - timedelta(days=days_ago)
+            record = hipot_run_record(spec, run_date)
+            store.put(cable_id, "cable_hipot", record)
+
+
+def _equipment_provider(evidence_store):
     """Returns a function (kind, device_id) -> dict.
 
-    `kind` is one of: xfmr, gen, ups, cable, ats. The function dispatches to
-    the right equipment_records helper. The XFMR-A1 record always reflects
-    the current C2H2 = 3.4 ppm so the Duval triangle/dashboard renders
-    the active-arcing fault zone."""
+    Hipot reads from the EvidenceStore (the platform-correct path: the
+    test engine writes records there, the API reads them back). Other
+    equipment kinds still fall through to legacy demo fixtures and will
+    be migrated to the same path in subsequent commits."""
     def provider(kind: str, device_id: str) -> dict:
         if kind in ("xfmr", "transformer"):
             c2h2_now = 3.4 if device_id == "xfmr-A1" else 0.8
@@ -444,7 +497,7 @@ def _equipment_provider():
         if kind == "ups":
             return ups_record(device_id)
         if kind in ("cable", "hipot"):
-            return cable_hipot_record(device_id)
+            return build_equipment_panel(kind, device_id, evidence_store)
         if kind == "ats":
             return ats_record(device_id)
         raise KeyError(f"unknown equipment kind: {kind}")
@@ -472,6 +525,12 @@ async def main():
     config = DemoConfig()
     devices, runs = build_facility()
     graph = power_graph(devices)
+
+    # Evidence store: every commissioning panel reads from here. The
+    # seed below populates it with deterministic cable-hipot runs the
+    # real platform would have written via test_engine.execute().
+    evidence_store = InMemoryEvidenceStore()
+    _seed_hipot_runs(evidence_store, devices)
 
     attest = AttestationEngine(
         facility_name=config.facility_name,
@@ -567,7 +626,7 @@ async def main():
             }
         },
         telemetry_provider=lambda: telemetry_to_dict(live_telemetry(devices, runs)),
-        equipment_provider=_equipment_provider(),
+        equipment_provider=_equipment_provider(evidence_store),
     )
     app = create_app(deps)
 
