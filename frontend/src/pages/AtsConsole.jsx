@@ -122,37 +122,49 @@ function formatT(ms) {
 }
 
 function TransferTimeline({ sequence }) {
-  const W = 1100, H = 110;
-  const padX = 50;
+  const W = 1200, H = 90;
+  const padX = 60;
+  const axisY = 56;
   const totalMs = Math.max(1, sequence[sequence.length - 1].t_offset_ms);
-  // Use a log-style scale so early-millisecond steps don't get squashed
   const xFor = (ms) => padX + Math.pow(ms / totalMs, 0.42) * (W - 2 * padX);
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H}>
-      {/* Axis */}
-      <line x1={padX} y1={H / 2} x2={W - padX} y2={H / 2}
-            stroke="var(--border)" strokeWidth="2" />
-      {sequence.map((s, i) => {
-        const x = xFor(s.t_offset_ms);
-        const above = i % 2 === 0;
-        return (
-          <g key={i}>
-            <line x1={x} y1={H / 2} x2={x} y2={above ? H / 2 - 18 : H / 2 + 18}
-                  stroke="var(--text-faint)" strokeWidth="1" />
-            <circle cx={x} cy={H / 2} r="5"
-                    fill={s.passed ? "var(--pass)" : "var(--fail)"} />
-            <text x={x} y={above ? H / 2 - 22 : H / 2 + 32}
-                  fontSize="9.5" fill="var(--text)"
-                  textAnchor="middle" fontFamily="monospace">
-              {formatT(s.t_offset_ms)}
-            </text>
-          </g>
-        );
-      })}
-      <text x={padX} y={H - 6} fontSize="10" fill="var(--text-faint)">T₀ utility loss</text>
-      <text x={W - padX} y={H - 6} fontSize="10" fill="var(--text-faint)" textAnchor="end">
-        retransfer + cooldown
-      </text>
-    </svg>
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet">
+        <line x1={padX} y1={axisY} x2={W - padX} y2={axisY}
+              stroke="var(--border-strong)" strokeWidth="2" />
+        <text x={padX} y={20} fontSize="13" fill="var(--text-tertiary)"
+              fontFamily="var(--font-mono)">
+          T₀ utility loss
+        </text>
+        <text x={W - padX} y={20} fontSize="13" fill="var(--text-tertiary)"
+              fontFamily="var(--font-mono)" textAnchor="end">
+          retransfer + cooldown
+        </text>
+        {sequence.map((s, i) => {
+          const x = xFor(s.t_offset_ms);
+          return (
+            <g key={i}>
+              <circle cx={x} cy={axisY} r="12"
+                      fill={s.passed ? "var(--pass)" : "var(--fail)"}
+                      stroke="var(--bg-base)" strokeWidth="2" />
+              <text x={x} y={axisY + 5} fontSize="14" fill="var(--text-inverse)"
+                    textAnchor="middle" fontFamily="var(--font-mono)" fontWeight="700">
+                {i + 1}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="timeline-legend">
+        {sequence.map((s, i) => (
+          <div key={i} className="timeline-legend-row">
+            <span className={s.passed ? "tl-num pass" : "tl-num fail"}>{i + 1}</span>
+            <span className="tl-time">{formatT(s.t_offset_ms)}</span>
+            <span className="tl-step">{s.step || s.name || ""}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

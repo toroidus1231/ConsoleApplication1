@@ -985,3 +985,37 @@ select {
 .hmi-gauge    { font-size: 9px;  fill: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
 .hmi-btn      { font-size: 10px; fill: var(--text-primary); font-weight: 700; }
 .hmi-alarm    { font-size: 10px; fill: var(--fail); font-weight: 700; letter-spacing: 0.04em; }
+
+/* Transfer-timeline legend (ATS console) */
+.timeline-legend {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 28px;
+  padding: 14px 6px 4px;
+}
+.timeline-legend-row {
+  display: grid;
+  grid-template-columns: 28px 64px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.tl-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-weight: 700;
+  color: var(--text-inverse);
+}
+.tl-num.pass { background: var(--pass); }
+.tl-num.fail { background: var(--fail); }
+.tl-time { color: var(--text-primary); font-weight: 600; }
+.tl-step { color: var(--text-secondary); }
+@media (min-width: 1100px) {
+  .timeline-legend { grid-template-columns: repeat(3, 1fr); }
+}
