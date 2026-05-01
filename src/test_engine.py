@@ -323,6 +323,18 @@ class TestEngine:
 
             await self.influx.write_poll(poll, test_id=request.test_id)
 
+            # Emit a poll_result event so /api/v1/tests/live/{id} SSE
+            # subscribers see per-register samples in real time.
+            await self._emit("poll_result", {
+                "test_id": request.test_id,
+                "device_id": device.device_id,
+                "measurements": {
+                    n: float(poll.measurements[n])
+                    for n in monitor_names if n in poll.measurements
+                },
+                "timestamp_ns": poll.timestamp_ns,
+            })
+
             triggered = self._check_abort_conditions(abort_conditions, poll)
             if triggered is not None:
                 result.abort_triggered = True
