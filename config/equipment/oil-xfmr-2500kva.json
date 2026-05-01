@@ -20,24 +20,38 @@
     {
       "name": "transformer_turns_ratio",
       "type": "transformer_turns_ratio",
-      "spec_reference": "IEEE C57.12.90 §8.4 (≤ 0.5% deviation)",
+      "spec_reference": "IEEE C57.12.90 \u00a78.4 (\u2264 0.5% deviation)",
       "instrument": {
-        "vendor": "Megger", "model": "TTR330",
+        "vendor": "Megger",
+        "model": "TTR330",
         "serial": "SN-TTR-9921",
         "cal_cert": "sha256:megger-ttr330-2026-q1"
       },
       "parameters": {
-        "taps": [-2, -1, 0, 1, 2],
-        "phases": ["A", "B", "C"]
+        "taps": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "phases": [
+          "A",
+          "B",
+          "C"
+        ]
       },
-      "acceptance": {"max_deviation_pct": 0.5}
+      "acceptance": {
+        "max_deviation_pct": 0.5
+      }
     },
     {
       "name": "polarization_index",
       "type": "polarization_index",
-      "spec_reference": "IEEE 43-2013 (PI ≥ 2.0 for class A)",
+      "spec_reference": "IEEE 43-2013 (PI \u2265 2.0 for class A)",
       "instrument": {
-        "vendor": "Megger", "model": "MIT525",
+        "vendor": "Megger",
+        "model": "MIT525",
         "serial": "SN-MIT-78421",
         "cal_cert": "sha256:megger-mit525-2026-q1"
       },
@@ -45,19 +59,30 @@
         "test_voltage_v": 5000,
         "duration_minutes": 10
       },
-      "acceptance": {"min_pi": 2.0}
+      "acceptance": {
+        "min_pi": 2.0
+      }
     },
     {
       "name": "dga_initial_sample",
       "type": "dissolved_gas_analysis",
       "spec_reference": "IEEE C57.104-2008 / IEC 60599 (Duval)",
       "instrument": {
-        "vendor": "Qualitrol", "model": "118ITM",
+        "vendor": "Qualitrol",
+        "model": "118ITM",
         "serial": "SN-QTL-118-001",
         "cal_cert": "sha256:qualitrol-118-2026-q1"
       },
       "parameters": {
-        "gases": ["h2", "ch4", "c2h6", "c2h4", "c2h2", "co", "co2"],
+        "gases": [
+          "h2",
+          "ch4",
+          "c2h6",
+          "c2h4",
+          "c2h2",
+          "co",
+          "co2"
+        ],
         "history_weeks": 14
       },
       "acceptance": {
@@ -69,9 +94,10 @@
     {
       "name": "transformer_hipot",
       "type": "transformer_hipot_history",
-      "spec_reference": "IEEE C57.12.90 §10 / NETA §7.2",
+      "spec_reference": "IEEE C57.12.90 \u00a710 / NETA \u00a77.2",
       "instrument": {
-        "vendor": "Vitrek", "model": "95X",
+        "vendor": "Vitrek",
+        "model": "95X",
         "serial": "SN-VTK-95X-12345",
         "cal_cert": "sha256:vitrek-95x-2026-q2"
       },
@@ -79,8 +105,194 @@
         "test_factor": 0.8,
         "duration_seconds": 60
       },
-      "acceptance": {"max_leakage_ma": 0.5}
+      "acceptance": {
+        "max_leakage_ma": 0.5
+      }
     }
   ],
-  "manual_signoffs": []
+  "manual_signoffs": [],
+  "panel": {
+    "header": {
+      "title_template": "Transformer \u00b7 {device_id}",
+      "crumb_template": "{rated_kva} kVA \u00b7 {voltage_class} \u00b7 {vector_group}",
+      "status_field": "passed",
+      "status_labels": {
+        "true": "ACCEPTED",
+        "false": "ACTIVE FAULT"
+      }
+    },
+    "tiles": [
+      {
+        "label": "C\u2082H\u2082",
+        "value_field": "current_gases.c2h2",
+        "format": "{:.2f} ppm",
+        "color_field": "fault_state",
+        "color_labels": {
+          "healthy": "var(--pass)",
+          "active_arcing": "var(--fail)",
+          "partial_discharge": "var(--major)",
+          "overheating": "var(--major)"
+        }
+      },
+      {
+        "label": "H\u2082",
+        "value_field": "current_gases.h2",
+        "format": "{:.1f} ppm"
+      },
+      {
+        "label": "CH\u2084",
+        "value_field": "current_gases.ch4",
+        "format": "{:.1f} ppm"
+      },
+      {
+        "label": "C\u2082H\u2084",
+        "value_field": "current_gases.c2h4",
+        "format": "{:.1f} ppm"
+      },
+      {
+        "label": "CO\u2082",
+        "value_field": "current_gases.co2",
+        "format": "{:.0f} ppm"
+      },
+      {
+        "label": "PI",
+        "value_field": "polarization_index.value",
+        "format": "{:.2f}",
+        "color_field": "polarization_index.passed",
+        "color_labels": {
+          "true": "var(--pass)",
+          "false": "var(--fail)"
+        }
+      }
+    ],
+    "cards": [
+      {
+        "kind": "duval",
+        "title": "Duval triangle (DGA fault diagnosis \u00b7 IEC 60599)",
+        "data_path": "current_gases"
+      },
+      {
+        "kind": "line_chart",
+        "title": "DGA gas analysis \u00b7 14-week trend (IEEE C57.104)",
+        "height": 260,
+        "data_path": "dga_history",
+        "x": {
+          "field": "days_ago"
+        },
+        "y_axes": [
+          {
+            "id": "ppm",
+            "label": "ppm"
+          }
+        ],
+        "lines": [
+          {
+            "y_axis_id": "ppm",
+            "field": "h2",
+            "stroke": "#58a6ff",
+            "name": "H\u2082"
+          },
+          {
+            "y_axis_id": "ppm",
+            "field": "ch4",
+            "stroke": "#7ee787",
+            "name": "CH\u2084"
+          },
+          {
+            "y_axis_id": "ppm",
+            "field": "c2h4",
+            "stroke": "#f0a05c",
+            "name": "C\u2082H\u2084"
+          },
+          {
+            "y_axis_id": "ppm",
+            "field": "c2h2",
+            "stroke": "#f85149",
+            "name": "C\u2082H\u2082"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "title": "Transformer turns ratio (IEEE C57.12.90)",
+        "data_path": "ttr",
+        "columns": [
+          {
+            "label": "Tap",
+            "field": "tap",
+            "mono": true
+          },
+          {
+            "label": "Phase",
+            "field": "phase",
+            "mono": true
+          },
+          {
+            "label": "Expected",
+            "field": "expected",
+            "format": "{:.4f}",
+            "mono": true
+          },
+          {
+            "label": "Measured",
+            "field": "measured",
+            "format": "{:.4f}",
+            "mono": true
+          },
+          {
+            "label": "Deviation",
+            "field": "deviation_pct",
+            "format": "{:.3f} %",
+            "mono": true
+          },
+          {
+            "label": "Status",
+            "kind": "badge",
+            "field": "passed",
+            "labels": {
+              "true": "passed",
+              "false": "failed"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pi_curve",
+        "data_path": "polarization_index"
+      },
+      {
+        "kind": "table",
+        "title": "Hipot history (NETA \u00a77.2)",
+        "data_path": "hipot_history",
+        "columns": [
+          {
+            "label": "Days ago",
+            "field": "date_offset_days",
+            "mono": true
+          },
+          {
+            "label": "Voltage",
+            "field": "voltage_kv",
+            "format": "{:.2f} kV",
+            "mono": true
+          },
+          {
+            "label": "Leakage",
+            "field": "leakage_ma",
+            "format": "{:.3f} mA",
+            "mono": true
+          },
+          {
+            "label": "Status",
+            "kind": "badge",
+            "field": "passed",
+            "labels": {
+              "true": "passed",
+              "false": "failed"
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

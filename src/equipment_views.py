@@ -1,14 +1,14 @@
 """Equipment-panel views.
 
 The /api/v1/equipment/{kind}/{device_id} endpoint dispatches here.
-Dispatch is by `category` field on the device's Config Context, not by
-URL kind. The URL kind is treated as the category alias (xfmr, hipot,
-busway, …) and resolved against the Config Context registry.
+Dispatch is by `category` field on the device's Config Context.
 
-Each panel function reads the latest run + history from the
-EvidenceStore (the platform-shared MinIO-backed store; in dev it's the
-in-memory shim). Returns {"no_prior_run": True, ...} when nothing has
-been recorded.
+Each panel function returns the assembled record + the panel.layout
+block from the Config Context. The frontend renders the layout
+generically — adding a new family is a new <slug>.json with a panel
+layout, no React code.
+
+Returns {"no_prior_run": True, ...} when nothing has been recorded.
 """
 
 from __future__ import annotations
@@ -196,17 +196,43 @@ _CATEGORY_DISPATCH = {
 # ---------------------------------------------------------------------------
 
 
-def build_panel(kind: str, device_id: str, store: EvidenceStore) -> dict:
-    """`kind` is the URL alias from the route. Resolve to the canonical
-    category on the device's Config Context and dispatch.
-
-    In production (NetBox-backed), the device's category is looked up in
-    NetBox via device_type_slug. For the demo, the URL alias maps
-    directly to the category."""
+def build_panel(kind: str, device_id: str, store: EvidenceStore,
+                config: dict | None = None) -> dict:
+    """Resolve URL kind → category → category aggregator. Attach the
+    panel.layout block from the device's Config Context for the
+    frontend's generic renderer."""
     category = URL_KIND_TO_CATEGORY.get(kind)
     if category is None:
         raise KeyError(f"unknown URL kind: {kind!r}")
     fn = _CATEGORY_DISPATCH.get(category)
     if fn is None:
         raise KeyError(f"no panel registered for category: {category!r}")
-    return fn(device_id, store)
+    record = fn(device_id, store)
+    if config is not None and "panel" in config:
+        record["panel_layout"] = config["panel"]
+        record["category"] = config["category"]
+        record["device_type_slug"] = config["device_type_slug"]
+        record["manufacturer"] = config.get("manufacturer", record.get("manufacturer"))
+        record["model"] = config.get("model", record.get("model"))
+    return record
+
+
+def build_panel_by_id(device_id: str, store: EvidenceStore,
+                      effective_configs: dict[str, dict]) -> dict:
+    """For the new generic /api/v1/equipment/{device_id} route — looks up
+    the device's Config Context and dispatches by its category."""
+    cfg = effective_configs.get(device_id)
+    if cfg is None:
+        raise KeyError(f"unknown device: {device_id!r}")
+    category = cfg["category"]
+    fn = _CATEGORY_DISPATCH.get(category)
+    if fn is None:
+        raise KeyError(f"no panel for category: {category!r}")
+    record = fn(device_id, store)
+    record["category"] = category
+    record["device_type_slug"] = cfg["device_type_slug"]
+    record["manufacturer"] = cfg.get("manufacturer", record.get("manufacturer"))
+    record["model"] = cfg.get("model", record.get("model"))
+    if "panel" in cfg:
+        record["panel_layout"] = cfg["panel"]
+    return record

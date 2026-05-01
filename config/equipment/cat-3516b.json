@@ -20,14 +20,20 @@
     {
       "name": "generator_load_bank",
       "type": "generator_loadbank",
-      "spec_reference": "NFPA 110 §8.4.2 / NETA §7.22 4-hour graduated load bank",
+      "spec_reference": "NFPA 110 \u00a78.4.2 / NETA \u00a77.22 4-hour graduated load bank",
       "instrument": {
-        "vendor": "Avtron", "model": "K875A",
+        "vendor": "Avtron",
+        "model": "K875A",
         "serial": "SN-AV-K875A-7711",
         "cal_cert": "sha256:avtron-k875a-2026-q1"
       },
       "parameters": {
-        "steps": [0.25, 0.50, 0.75, 1.00],
+        "steps": [
+          0.25,
+          0.5,
+          0.75,
+          1.0
+        ],
         "step_duration_minutes": 60
       },
       "acceptance": {
@@ -41,14 +47,20 @@
     {
       "name": "generator_paralleling",
       "type": "generator_loadbank",
-      "spec_reference": "IEEE 446 §6 / NFPA 110 Type 10 black-start",
+      "spec_reference": "IEEE 446 \u00a76 / NFPA 110 Type 10 black-start",
       "instrument": {
-        "vendor": "Avtron", "model": "K875A",
+        "vendor": "Avtron",
+        "model": "K875A",
         "serial": "SN-AV-K875A-7711",
         "cal_cert": "sha256:avtron-k875a-2026-q1"
       },
       "parameters": {
-        "steps": [0.25, 0.50, 0.75, 1.00],
+        "steps": [
+          0.25,
+          0.5,
+          0.75,
+          1.0
+        ],
         "step_duration_minutes": 60,
         "include_blackstart_sequence": true
       },
@@ -58,5 +70,113 @@
       }
     }
   ],
-  "manual_signoffs": []
+  "manual_signoffs": [],
+  "panel": {
+    "header": {
+      "title_template": "Generator \u00b7 {device_id}",
+      "crumb_template": "{manufacturer} {model} \u00b7 {rated_kw} kW \u00b7 NFPA 110 Type 10",
+      "status_field": "passed_overall",
+      "status_labels": {
+        "true": "READY",
+        "false": "FAULT"
+      }
+    },
+    "tiles": [
+      {
+        "label": "Rated power",
+        "value_field": "rated_kw",
+        "format": "{:.0f} kW"
+      },
+      {
+        "label": "Operating hours",
+        "value_field": "operating_hours",
+        "format": "{:.0f} h"
+      },
+      {
+        "label": "Manufacturer",
+        "value_field": "manufacturer"
+      },
+      {
+        "label": "Model",
+        "value_field": "model"
+      }
+    ],
+    "cards": [
+      {
+        "kind": "line_chart",
+        "title": "Load-bank trace \u00b7 4-hour graduated test (NFPA 110 \u00a78.4.2)",
+        "height": 320,
+        "data_path": "loadbank_trace",
+        "decimate": 4,
+        "x": {
+          "field": "t_seconds",
+          "tick_suffix": "s"
+        },
+        "y_axes": [
+          {
+            "id": "kw",
+            "label": "kW",
+            "domain_max_field": "rated_kw",
+            "domain_max_factor": 1.1
+          },
+          {
+            "id": "temp",
+            "label": "\u00b0C",
+            "orientation": "right",
+            "domain_max_field": "rated_kw",
+            "domain_max_factor": 0.1
+          }
+        ],
+        "lines": [
+          {
+            "y_axis_id": "kw",
+            "field": "kw",
+            "stroke": "#58a6ff",
+            "name": "Real Power kW"
+          },
+          {
+            "y_axis_id": "temp",
+            "field": "oil_temp_c",
+            "stroke": "#f0a05c",
+            "name": "Oil \u00b0C"
+          },
+          {
+            "y_axis_id": "temp",
+            "field": "coolant_temp_c",
+            "stroke": "#7ee787",
+            "name": "Coolant \u00b0C"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "title": "Black-start sequence \u00b7 last automatic test (NFPA 110)",
+        "data_path": "startup_sequence",
+        "columns": [
+          {
+            "label": "Step",
+            "field": "step"
+          },
+          {
+            "label": "Expected",
+            "field": "expected"
+          },
+          {
+            "label": "Actual",
+            "field": "actual",
+            "mono": true
+          },
+          {
+            "label": "Status",
+            "kind": "badge",
+            "field": "passed",
+            "labels": {
+              "true": "passed",
+              "false": "failed"
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

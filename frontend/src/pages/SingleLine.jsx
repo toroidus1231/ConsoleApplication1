@@ -303,10 +303,10 @@ function DetailPanel({ t, selected, navigate }) {
             {type === "gen"     && <GenBody g={t.gens[id]} />}
           </>
         )}
-        {type === "xfmr"  && open(`/xfmr/${id}`)}
-        {type === "ups"   && open(`/ups/${id}`)}
-        {type === "gen"   && open(`/gens/${id}`)}
-        {type === "ats"   && open(`/ats/${id}`)}
+        {type === "xfmr"  && open(`/equipment/${id}`)}
+        {type === "ups"   && open(`/equipment/${id}`)}
+        {type === "gen"   && open(`/equipment/${id}`)}
+        {type === "ats"   && open(`/equipment/${id}`)}
         {type === "relay" && open(`/relays/${id}`)}
       </div>
     </div>

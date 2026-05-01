@@ -21,6 +21,7 @@ from src.api.server import Deps, create_app, fanout_loop
 from src.attestation import AttestationEngine
 from src.equipment_loader import load_device_type_configs, merge_instance_overrides
 from src.equipment_views import build_panel as build_equipment_panel
+from src.equipment_views import build_panel_by_id
 from src.evidence_store import InMemoryEvidenceStore
 from src.orchestrator import Orchestrator, build_power_graph_from_connections
 from src.test_executor import execute_test, render_manual_signoffs
@@ -567,13 +568,17 @@ def _seed_evidence_store(store, effective_configs: dict[str, dict], today: datet
 
 
 def _equipment_provider(evidence_store):
-    """Returns a function (kind, device_id) -> dict that always reads
-    through the EvidenceStore. Every panel is now a view of records the
-    test engine wrote (or, in demo, that the dev seed wrote through the
-    same store interface)."""
+    """Legacy URL-kind dispatch (kept for back-compat)."""
     def provider(kind: str, device_id: str) -> dict:
         return build_equipment_panel(kind, device_id, evidence_store)
     return provider
+
+
+def _equipment_by_id(device_id, evidence_store, effective_configs):
+    """Generic dispatch by device_id. Looks up the device's Config
+    Context, picks the right category aggregator, attaches panel.layout
+    for the frontend's generic renderer."""
+    return build_panel_by_id(device_id, evidence_store, effective_configs)
 
 
 async def _seed_attestation_chain(attest, devices):
@@ -704,6 +709,8 @@ async def main():
         telemetry_provider=lambda: telemetry_to_dict(
             live_telemetry(devices, runs, effective_configs=effective_configs)),
         equipment_provider=_equipment_provider(evidence_store),
+        equipment_by_id_provider=lambda device_id: _equipment_by_id(
+            device_id, evidence_store, effective_configs),
     )
     app = create_app(deps)
 

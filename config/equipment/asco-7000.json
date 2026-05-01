@@ -14,9 +14,10 @@
     {
       "name": "ats_transfer",
       "type": "ats_transfer_sequence",
-      "spec_reference": "NFPA 110 Type 10 / IEEE 446 §6.5 / spec §4.3",
+      "spec_reference": "NFPA 110 Type 10 / IEEE 446 \u00a76.5 / spec \u00a74.3",
       "instrument": {
-        "vendor": "ASCO", "model": "7000 Service Mode",
+        "vendor": "ASCO",
+        "model": "7000 Service Mode",
         "serial": "(integrated)",
         "cal_cert": "sha256:asco-7000-2026-q1"
       },
@@ -32,5 +33,89 @@
       }
     }
   ],
-  "manual_signoffs": []
+  "manual_signoffs": [],
+  "panel": {
+    "header": {
+      "title_template": "ATS \u00b7 {device_id}",
+      "crumb_template": "{manufacturer} {model} \u00b7 {rated_amps} A \u00b7 NFPA 110 Type 10",
+      "status_field": "overall_passed",
+      "status_labels": {
+        "true": "TRANSFER TEST PASSED",
+        "false": "DEFICIENCY"
+      }
+    },
+    "tiles": [],
+    "cards": [
+      {
+        "kind": "table",
+        "title": "Sequence of operations \u00b7 last transfer test",
+        "data_path": "sequence",
+        "columns": [
+          {
+            "label": "Step",
+            "field": "step"
+          },
+          {
+            "label": "Expected",
+            "field": "expected"
+          },
+          {
+            "label": "Actual",
+            "field": "actual"
+          },
+          {
+            "label": "Status",
+            "kind": "badge",
+            "field": "passed",
+            "labels": {
+              "true": "passed",
+              "false": "failed"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "title": "Downstream UPS verification (spec \u00a74.3)",
+        "data_path": "downstream_ups",
+        "columns": [
+          {
+            "label": "UPS",
+            "field": "id",
+            "mono": true
+          },
+          {
+            "label": "Site",
+            "field": "site"
+          },
+          {
+            "label": "Min V during",
+            "field": "min_input_v_during",
+            "format": "{:.0f} V",
+            "mono": true
+          },
+          {
+            "label": "Battery after",
+            "field": "battery_pct_after",
+            "format": "{:.1f} %",
+            "mono": true
+          },
+          {
+            "label": "Stayed online",
+            "kind": "badge",
+            "field": "stayed_online",
+            "labels": {
+              "true": "yes",
+              "false": "no"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "ats_pipeline",
+        "title": "Transfer timeline",
+        "data_path": "sequence"
+      }
+    ]
+  }
 }

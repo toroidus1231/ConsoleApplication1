@@ -25,9 +25,10 @@
     {
       "name": "ups_battery_transfer",
       "type": "ups_battery_transfer",
-      "spec_reference": "IEEE 1184 / IEC 62040-3 Class 3 (≤ 10 ms switchover)",
+      "spec_reference": "IEEE 1184 / IEC 62040-3 Class 3 (\u2264 10 ms switchover)",
       "instrument": {
-        "vendor": "APC", "model": "Symmetra Service Bypass",
+        "vendor": "APC",
+        "model": "Symmetra Service Bypass",
         "serial": "(integrated)",
         "cal_cert": "sha256:apc-symmetra-2026-q1"
       },
@@ -42,5 +43,136 @@
       }
     }
   ],
-  "manual_signoffs": []
+  "manual_signoffs": [],
+  "panel": {
+    "header": {
+      "title_template": "UPS \u00b7 {device_id}",
+      "crumb_template": "{manufacturer} {model} \u00b7 {rated_kw} kW \u00b7 IEC 62040-3 Class 3",
+      "status_field": "passed",
+      "status_labels": {
+        "true": "ONLINE",
+        "false": "FAULT"
+      }
+    },
+    "tiles": [
+      {
+        "label": "Input V",
+        "value_template": "476.9 V"
+      },
+      {
+        "label": "Output V",
+        "value_template": "480.0 V"
+      },
+      {
+        "label": "Battery",
+        "value_field": "battery_pct",
+        "format": "{:.1f} %",
+        "color": "var(--pass)"
+      },
+      {
+        "label": "Runtime",
+        "value_field": "runtime_min",
+        "format": "{:.1f} min"
+      },
+      {
+        "label": "Switchover",
+        "value_field": "switchover_ms",
+        "format": "{:.1f} ms"
+      },
+      {
+        "label": "Weak cells",
+        "value_template": "{weak_cells.length}",
+        "color_field": "passed",
+        "color_labels": {
+          "true": "var(--pass)",
+          "false": "var(--fail)"
+        }
+      }
+    ],
+    "cards": [
+      {
+        "kind": "line_chart",
+        "title": "Battery transfer waveform \u00b7 last commissioning test (IEEE 1184)",
+        "height": 280,
+        "data_path": "transfer_waveform_60s",
+        "decimate": 6,
+        "x": {
+          "field": "t_ms",
+          "tick_suffix": "ms"
+        },
+        "y_axes": [
+          {
+            "id": "v",
+            "label": "V_out",
+            "domain_min": 450,
+            "domain_max_factor": 1,
+            "domain_max_field": "min_voltage_v",
+            "domain_min_value": 450
+          }
+        ],
+        "lines": [
+          {
+            "y_axis_id": "v",
+            "field": "output_voltage",
+            "stroke": "#58a6ff",
+            "name": "V_out"
+          }
+        ]
+      },
+      {
+        "kind": "bar_chart",
+        "title": "Battery cells \u00b7 240 cells",
+        "height": 220,
+        "data_path": "all_cells",
+        "x": {
+          "field": "id"
+        },
+        "y": {
+          "field": "voltage",
+          "label": "V"
+        },
+        "bar_default_color": "#58a6ff",
+        "bar_color_logic": [
+          {
+            "if_field": "ok",
+            "if_value": false,
+            "color": "var(--fail)"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "title": "Transfer history",
+        "data_path": "transfer_history",
+        "columns": [
+          {
+            "label": "Days ago",
+            "field": "date_offset_days",
+            "mono": true
+          },
+          {
+            "label": "Min V",
+            "field": "min_voltage_v",
+            "format": "{:.1f} V",
+            "mono": true
+          },
+          {
+            "label": "Switchover",
+            "field": "switchover_ms",
+            "format": "{:.1f} ms",
+            "mono": true
+          },
+          {
+            "label": "Status",
+            "kind": "badge",
+            "field": "passed",
+            "labels": {
+              "true": "passed",
+              "false": "failed"
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -60,6 +60,8 @@ class Deps:
     # Equipment record provider: callable(kind, device_id) -> dict. For
     # /equipment/{kind}/{id} endpoint.
     equipment_provider: Any = None
+    # Generic device-id-based equipment provider used by /api/v1/equipment/{device_id}
+    equipment_by_id_provider: Any = None
     # SSE fan-out — registered listeners get every event.
     _sse_subscribers: set[asyncio.Queue[Event]] = field(default_factory=set)
 
@@ -329,15 +331,28 @@ def create_app(deps: Deps) -> FastAPI:
 
     @app.get("/api/v1/equipment/{kind}/{device_id}", dependencies=[Depends(auth)])
     async def equipment_record(kind: str, device_id: str):
-        """Per-equipment commissioning record (DGA history, load-bank
-        trace, transfer waveform, hipot trace, ATS sequence). Drives the
-        equipment-specific consoles."""
+        """Legacy per-kind endpoint. Kept for backward compatibility;
+        the frontend now uses /api/v1/equipment/{device_id} which
+        dispatches by Config Context category."""
         if deps.equipment_provider is None:
             raise HTTPException(503, "equipment provider not configured")
         try:
             return deps.equipment_provider(kind, device_id)
         except KeyError:
             raise HTTPException(404, f"no record for {kind}/{device_id}")
+
+    @app.get("/api/v1/equipment/{device_id}", dependencies=[Depends(auth)])
+    async def equipment_by_id(device_id: str):
+        """Generic equipment endpoint. Looks up the device's Config
+        Context, dispatches to the right category aggregator, and
+        attaches panel.layout for the frontend's generic renderer.
+        Adding a new equipment family is now a config drop."""
+        if deps.equipment_by_id_provider is None:
+            raise HTTPException(503, "equipment provider not configured")
+        try:
+            return deps.equipment_by_id_provider(device_id)
+        except KeyError:
+            raise HTTPException(404, f"no device: {device_id}")
 
     return app
 

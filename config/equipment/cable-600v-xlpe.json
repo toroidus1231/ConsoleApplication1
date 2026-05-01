@@ -11,7 +11,7 @@
     "kind": "insulation_only",
     "params": {
       "initial_megohm_default": 380.0,
-      "aging_per_year_default": 0.030
+      "aging_per_year_default": 0.03
     }
   },
   "active_tests": [
@@ -20,7 +20,8 @@
       "type": "dc_withstand",
       "spec_reference": "NETA ATS-17 Table 100.5 (600 V class)",
       "instrument": {
-        "vendor": "Vitrek", "model": "95X",
+        "vendor": "Vitrek",
+        "model": "95X",
         "serial": "SN-VTK-95X-12345",
         "cal_cert": "sha256:vitrek-95x-2026-q2"
       },
@@ -35,5 +36,172 @@
       }
     }
   ],
-  "manual_signoffs": []
+  "manual_signoffs": [],
+  "panel": {
+    "header": {
+      "title_template": "Cable Hipot \u00b7 {device_id}",
+      "crumb_template": "DC at 80% rated \u00b7 {target_kv} kV target",
+      "status_field": "passed",
+      "status_labels": {
+        "true": "PASSED",
+        "false": "FAILED"
+      }
+    },
+    "tiles": [
+      {
+        "label": "Test type",
+        "value_field": "test_type"
+      },
+      {
+        "label": "Target voltage",
+        "value_field": "target_kv",
+        "format": "{:.2f} kV"
+      },
+      {
+        "label": "Ramp",
+        "value_field": "ramp_seconds",
+        "format": "{:.0f}s"
+      },
+      {
+        "label": "Hold",
+        "value_field": "hold_seconds",
+        "format": "{:.0f}s"
+      },
+      {
+        "label": "Trip threshold",
+        "value_field": "leakage_trip_threshold_ma",
+        "format": "{:.2f} mA"
+      },
+      {
+        "label": "Peak leakage",
+        "value_field": "peak_leakage_ma",
+        "format": "{:.3f} mA",
+        "color_field": "passed",
+        "color_labels": {
+          "true": "var(--pass)",
+          "false": "var(--major)"
+        }
+      }
+    ],
+    "cards": [
+      {
+        "kind": "kv_table",
+        "title": "Instrument \u00b7 calibration certificate",
+        "rows": [
+          {
+            "label": "Vendor / model",
+            "value_template": "{instrument.vendor} \u00b7 {instrument.model}"
+          },
+          {
+            "label": "Serial",
+            "value_field": "instrument.serial",
+            "mono": true
+          },
+          {
+            "label": "Cal cert hash",
+            "value_field": "instrument.cal_cert",
+            "mono": true,
+            "wrap": true
+          }
+        ]
+      },
+      {
+        "kind": "line_chart",
+        "title": "Voltage / Leakage Trace",
+        "height": 320,
+        "data_path": "trace",
+        "decimate": 4,
+        "x": {
+          "field": "t_seconds",
+          "tick_suffix": "s"
+        },
+        "y_axes": [
+          {
+            "id": "v",
+            "label": "kV",
+            "domain_max_field": "target_kv",
+            "domain_max_factor": 1.1
+          },
+          {
+            "id": "i",
+            "label": "mA",
+            "orientation": "right",
+            "domain_max_field": "leakage_trip_threshold_ma",
+            "domain_max_factor": 1.2
+          }
+        ],
+        "lines": [
+          {
+            "y_axis_id": "v",
+            "field": "voltage_kv",
+            "name": "Voltage (kV)",
+            "stroke": "#58a6ff"
+          },
+          {
+            "y_axis_id": "i",
+            "field": "leakage_ma",
+            "name": "Leakage (mA)",
+            "stroke": "#f0a05c"
+          }
+        ],
+        "reference_lines": [
+          {
+            "y_axis_id": "i",
+            "y_value_field": "leakage_trip_threshold_ma",
+            "stroke": "var(--fail)",
+            "stroke_dasharray": "4 4",
+            "label": "trip threshold"
+          }
+        ],
+        "reference_areas": [
+          {
+            "y_axis_id": "v",
+            "x1_value": 0,
+            "x2_field": "ramp_seconds",
+            "fill": "var(--accent)",
+            "opacity": 0.04,
+            "label": "RAMP"
+          },
+          {
+            "y_axis_id": "v",
+            "x1_field": "ramp_seconds",
+            "x2_sum_fields": [
+              "ramp_seconds",
+              "hold_seconds"
+            ],
+            "fill": "var(--pass)",
+            "opacity": 0.04,
+            "label": "HOLD"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "title": "Trend across commissioning runs",
+        "data_path": "history",
+        "columns": [
+          {
+            "label": "Days ago",
+            "field": "date_offset_days",
+            "mono": true
+          },
+          {
+            "label": "Max leakage",
+            "field": "max_leakage_ma",
+            "format": "{:.3f} mA",
+            "mono": true
+          },
+          {
+            "label": "Status",
+            "kind": "badge",
+            "field": "passed",
+            "labels": {
+              "true": "passed",
+              "false": "failed"
+            }
+          }
+        ]
+      }
+    ]
+  }
 }
