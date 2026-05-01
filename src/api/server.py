@@ -254,6 +254,20 @@ def create_app(deps: Deps) -> FastAPI:
     async def power_graph_endpoint():
         return deps.facility_power_graph
 
+    @app.get("/api/v1/sld/layout", dependencies=[Depends(auth)])
+    async def sld_layout():
+        """NetBox/BIM-driven SLD layout. Computes node positions and
+        wire endpoints from the device list + power-DAG connections.
+        Frontend renders generically — no hardcoded positions."""
+        from src.topology.dynamic_sld import compute_layout, layout_to_dict
+        connections = []
+        for d in deps.facility_devices:
+            ps = d.get("power_source_id")
+            if ps:
+                connections.append((d["device_id"], ps))
+        layout = compute_layout(deps.facility_devices, connections)
+        return layout_to_dict(layout)
+
     @app.get("/api/v1/racks", dependencies=[Depends(auth)])
     async def racks():
         """Return rack-elevation data: { rack: [device, ...] sorted by U, desc }."""
