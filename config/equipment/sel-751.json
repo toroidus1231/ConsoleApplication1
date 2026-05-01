@@ -75,6 +75,37 @@
         "timing_tolerance_pct": 5.0,
         "min_timing_tolerance_ms": 50
       }
+    },
+    {
+      "name": "relay_soe_collection",
+      "type": "relay_soe_collection",
+      "spec_reference": "IEEE C37.232 §6 / IEEE 1815-2012 §11.3",
+      "instrument": {"vendor": "SEL", "model": "SEL-751",
+                     "transport": "dnp3",
+                     "serial": "SEL751-A8472301",
+                     "cal_cert": "sha256:sel-751-2026-q1"},
+      "parameters": {
+        "expected_elements": ["51", "50", "51N"]
+      },
+      "acceptance": {
+        "max_relative_skew_ms": 1.0
+      }
+    },
+    {
+      "name": "relay_comtrade_retrieval",
+      "type": "relay_comtrade_retrieval",
+      "spec_reference": "IEEE C37.111-2013 (COMTRADE)",
+      "instrument": {"vendor": "SEL", "model": "SEL-751",
+                     "transport": "dnp3",
+                     "serial": "SEL751-A8472301",
+                     "cal_cert": "sha256:sel-751-2026-q1"},
+      "parameters": {
+        "samples_per_cycle": 32,
+        "capture_cycles": 35
+      },
+      "acceptance": {
+        "min_total_samples": 960
+      }
     }
   ],
   "manual_signoffs": [

@@ -616,6 +616,113 @@ def test_sel_injection_current_a_is_pickup_times_multiple():
 
 
 # ---------------------------------------------------------------------------
+# relay_soe_collection / relay_comtrade_retrieval (DNP3-driven)
+# ---------------------------------------------------------------------------
+
+
+def _sel_dnp3_config():
+    return {
+        "category": "relay",
+        "manufacturer": "SEL",
+        "model": "SEL-751",
+        "ageing_model": {"params": {"install_year": 2022, "install_month": 4}},
+        "ratings": {"voltage_class_v": 480},
+    }
+
+
+def _soe_test_def():
+    return {
+        "name": "relay_soe_collection",
+        "type": "relay_soe_collection",
+        "spec_reference": "IEEE C37.232 §6",
+        "instrument": {"vendor": "SEL", "model": "SEL-751",
+                        "transport": "dnp3"},
+        "parameters": {"expected_elements": ["51", "50", "51N"]},
+        "acceptance": {"max_relative_skew_ms": 1.0},
+    }
+
+
+def _comtrade_test_def():
+    return {
+        "name": "relay_comtrade_retrieval",
+        "type": "relay_comtrade_retrieval",
+        "spec_reference": "IEEE C37.111-2013",
+        "instrument": {"vendor": "SEL", "model": "SEL-751",
+                        "transport": "dnp3"},
+        "parameters": {"samples_per_cycle": 32, "capture_cycles": 35},
+        "acceptance": {"min_total_samples": 32 * 30},
+    }
+
+
+def test_relay_soe_collection_shape_and_pass():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_dnp3_config(),
+                       test_def=_soe_test_def(),
+                       run_date=_today())
+    assert rec["test_type"] == "relay_soe_collection"
+    assert rec["spec_reference"] == "IEEE C37.232 §6"
+    assert rec["expected_elements"] == ["51", "50", "51N"]
+    # Each element fires pickup + dropout = 6 events
+    assert rec["events_captured"] == 6
+    assert {e["element"] for e in rec["events"]} == {"51", "50", "51N"}
+    assert rec["monotonic"] is True
+    assert rec["all_elements_present"] is True
+    assert rec["passed"] is True
+
+
+def test_relay_soe_events_are_monotonic():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_dnp3_config(),
+                       test_def=_soe_test_def(),
+                       run_date=_today())
+    timestamps = [e["timestamp_ms"] for e in rec["events"]]
+    assert timestamps == sorted(timestamps)
+
+
+def test_relay_soe_pickup_then_dropout_per_element():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_dnp3_config(),
+                       test_def=_soe_test_def(),
+                       run_date=_today())
+    by_element: dict[str, list[dict]] = {}
+    for e in rec["events"]:
+        by_element.setdefault(e["element"], []).append(e)
+    for code, events in by_element.items():
+        states = [e["state"] for e in events]
+        assert states == [True, False], f"{code} should pickup then dropout"
+
+
+def test_relay_comtrade_retrieval_shape():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_dnp3_config(),
+                       test_def=_comtrade_test_def(),
+                       run_date=_today())
+    assert rec["test_type"] == "relay_comtrade_retrieval"
+    assert rec["spec_reference"] == "IEEE C37.111-2013"
+    assert rec["filename"].endswith(".cfg")
+    assert rec["config_parseable"] is True
+    assert rec["total_samples"] == 32 * 35
+    assert rec["passed"] is True
+
+
+def test_relay_comtrade_total_size_consistent():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_dnp3_config(),
+                       test_def=_comtrade_test_def(),
+                       run_date=_today())
+    assert rec["total_size_bytes"] == rec["config_size_bytes"] + rec["data_size_bytes"]
+
+
+def test_relay_comtrade_filename_includes_run_date():
+    test_def = _comtrade_test_def()
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_dnp3_config(),
+                       test_def=test_def,
+                       run_date=_today())
+    assert "2026-05-01" in rec["filename"]
+
+
+# ---------------------------------------------------------------------------
 # breaker_timing
 # ---------------------------------------------------------------------------
 

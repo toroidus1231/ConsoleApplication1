@@ -7,7 +7,10 @@ from src.instruments import get_driver, list_drivers, register, _eager_register
 
 def test_eager_register_loads_all_drivers():
     _eager_register()
-    drivers = set(list_drivers())
+    # Drop the transport tag for this check — we just want to see that
+    # every (vendor, model) we expect is registered for at least one
+    # transport.
+    drivers_vm = {(v, m) for (v, m, _t) in list_drivers()}
     expected = {
         ("megger", "mit525"),
         ("megger", "dlro10x"),
@@ -18,7 +21,7 @@ def test_eager_register_loads_all_drivers():
         ("caterpillar", "emcp4.4"),
     }
     for k in expected:
-        assert k in drivers, f"missing driver {k}"
+        assert k in drivers_vm, f"missing driver {k}"
 
 
 def test_get_driver_case_insensitive():
