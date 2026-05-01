@@ -427,77 +427,69 @@ def checklists_for(devices):
 # ---------------------------------------------------------------------------
 
 
-def _ups_test_device(dev_id="ups-A"):
-    """The UPS battery-transfer test_def with full Modbus execution
-    details (preconditions, monitor registers, command, acceptance,
-    restore). This is what test_engine.execute() needs in
-    device.config_context['active_tests'] to actually run a test.
-
-    Production would have these execution-level details on every
-    Config Context. For the demo only this one device is wired
-    end-to-end; others are panel-shape-only."""
-    return DeviceInfo(
-        device_id=dev_id, name=dev_id, primary_ip="10.4.1.10",
-        device_type_slug="apc-symmetra-mw",
-        config_context={
-            "protocol": "modbus_tcp",
-            "active_tests": [{
-                "name": "ups_battery_transfer",
-                "preconditions": [
-                    {"register": "battery_pct", "operator": "gte", "value": 80},
-                    {"register": "ups_status", "operator": "eq", "value": 1},
-                ],
-                "command": {"address": UPS_REG_TEST_INITIATE, "value": 1, "function_code": 6},
-                "monitor": ["output_voltage", "battery_pct"],
-                "monitor_interval_ms": 50,
-                "monitor_duration_seconds": 5.0,
-                "acceptance": [
-                    {"register": "output_voltage", "metric": "settled_value",
-                     "operator": "gte", "value": 4700},
-                ],
-                "restore": {"address": UPS_REG_TEST_INITIATE, "value": 0},
-                "restore_verify": [{"register": "ups_status", "operator": "eq", "value": 1}],
-                "restore_timeout_seconds": 1,
-            }],
-        },
-        protocol="modbus_tcp", site="DC1-Ashburn", rack="UPS-A", position=10,
-    )
+def _flatten_execution(test_def: dict) -> dict:
+    """Take a Config-Context-shaped active_test (with optional `execution`
+    block carrying preconditions/command/monitor/acceptance/restore)
+    and produce a test_engine-shaped dict with those fields hoisted to
+    the top level. The engine reads them from there directly."""
+    out = dict(test_def)
+    exe = out.pop("execution", None)
+    if not exe:
+        return out
+    if "preconditions" in exe:
+        out["preconditions"] = exe["preconditions"]
+    if "command" in exe:
+        out["command"] = exe["command"]
+    if "monitor" in exe:
+        out["monitor"] = exe["monitor"]
+    if "monitor_interval_ms" in exe:
+        out["monitor_interval_ms"] = exe["monitor_interval_ms"]
+    if "monitor_duration_seconds" in exe:
+        out["monitor_duration_seconds"] = exe["monitor_duration_seconds"]
+    if "acceptance_evaluators" in exe:
+        out["acceptance"] = exe["acceptance_evaluators"]
+    if "restore" in exe:
+        out["restore"] = exe["restore"]
+    if "restore_verify" in exe:
+        out["restore_verify"] = exe["restore_verify"]
+    if "restore_timeout_seconds" in exe:
+        out["restore_timeout_seconds"] = exe["restore_timeout_seconds"]
+    return out
 
 
 def _make_device_loader(effective_configs: dict[str, dict]):
-    """Returns a device_loader for the orchestrator that resolves a
-    device_id to a DeviceInfo with its Config Context attached.
-
-    For ups-A, returns the fully-wired Modbus DeviceInfo so the test
-    engine can actually execute against the simulator.
-
-    For every other device, returns a DeviceInfo whose active_tests
-    come from its JSON Config Context. Those don't yet have execution-
-    level fields (preconditions/command/monitor/acceptance/restore)
-    so the engine will return 'test definition incomplete' — the
-    correct error rather than 'device not found'."""
-    ups_test = _ups_test_device()
+    """Returns a device_loader that resolves a device_id to a DeviceInfo
+    with its Config Context's active_tests attached, with each test's
+    `execution` block flattened to engine-shape."""
 
     async def device_loader(device_id: str) -> DeviceInfo:
-        if device_id == "ups-A":
-            return ups_test
         cfg = effective_configs.get(device_id)
         if cfg is None:
-            # Unknown device — engine will fail cleanly with 'not found'
             return DeviceInfo(
                 device_id=device_id, name=device_id, primary_ip="0.0.0.0",
                 device_type_slug="unknown", config_context={"active_tests": []},
                 protocol="unknown", site="DC1-Ashburn", rack="?", position=0,
             )
+        flattened = [_flatten_execution(t) for t in cfg.get("active_tests", [])]
+        # Pick the protocol from the first test's execution block (if any)
+        protocol = "synthetic"
+        for t in cfg.get("active_tests", []):
+            exe = t.get("execution") or {}
+            if exe.get("protocol"):
+                protocol = exe["protocol"]
+                break
+        # ups-A keeps its real Modbus IP so the existing simulator
+        # bridge's poller actually gets driven.
+        primary_ip = "10.4.1.10" if device_id == "ups-A" else "0.0.0.0"
         return DeviceInfo(
-            device_id=device_id, name=device_id, primary_ip="0.0.0.0",
+            device_id=device_id, name=device_id, primary_ip=primary_ip,
             device_type_slug=cfg["device_type_slug"],
             config_context={
-                "protocol": "synthetic",
-                "active_tests": cfg.get("active_tests", []),
+                "protocol": protocol,
+                "active_tests": flattened,
                 "manual_signoffs": cfg.get("manual_signoffs", []),
             },
-            protocol="synthetic", site="DC1-Ashburn",
+            protocol=protocol, site="DC1-Ashburn",
             rack=cfg.get("ratings", {}).get("rack", "?"), position=0,
         )
 
@@ -828,6 +820,7 @@ async def main():
         equipment_provider=_equipment_provider(evidence_store),
         equipment_by_id_provider=lambda device_id: _equipment_by_id(
             device_id, evidence_store, effective_configs),
+        _effective_configs_for_devices=effective_configs,
     )
     app = create_app(deps)
 

@@ -40,6 +40,53 @@
         "min_voltage_v": 460.0,
         "max_switchover_ms": 10.0,
         "max_weak_cells": 5
+      },
+      "execution": {
+        "protocol": "modbus_tcp",
+        "preconditions": [
+          {
+            "register": "battery_pct",
+            "operator": "gte",
+            "value": 80
+          },
+          {
+            "register": "ups_status",
+            "operator": "eq",
+            "value": 1
+          }
+        ],
+        "command": {
+          "address": 3,
+          "value": 1,
+          "function_code": 6,
+          "_address_name": "UPS_REG_TEST_INITIATE"
+        },
+        "monitor": [
+          "output_voltage",
+          "battery_pct"
+        ],
+        "monitor_interval_ms": 50,
+        "monitor_duration_seconds": 5.0,
+        "acceptance_evaluators": [
+          {
+            "register": "output_voltage",
+            "metric": "settled_value",
+            "operator": "gte",
+            "value": 4700
+          }
+        ],
+        "restore": {
+          "address": 3,
+          "value": 0
+        },
+        "restore_verify": [
+          {
+            "register": "ups_status",
+            "operator": "eq",
+            "value": 1
+          }
+        ],
+        "restore_timeout_seconds": 1
       }
     }
   ],

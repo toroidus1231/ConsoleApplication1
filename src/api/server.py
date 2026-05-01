@@ -64,6 +64,9 @@ class Deps:
     equipment_provider: Any = None
     # Generic device-id-based equipment provider used by /api/v1/equipment/{device_id}
     equipment_by_id_provider: Any = None
+    # Map device_id → effective Config Context (post-override). Used by
+    # GET /api/v1/devices/{id}/active_tests to populate Launch Test UI.
+    _effective_configs_for_devices: dict[str, dict] | None = None
     # SSE fan-out — registered listeners get every event.
     _sse_subscribers: set[asyncio.Queue[Event]] = field(default_factory=set)
 
@@ -210,6 +213,35 @@ def create_app(deps: Deps) -> FastAPI:
             rows = [d for d in rows if d.get("rack") == rack]
         return {"devices": rows}
 
+    @app.get("/api/v1/devices/{device_id}/active_tests",
+             dependencies=[Depends(auth)])
+    async def device_active_tests(device_id: str):
+        """Return the list of `active_tests` defined in this device's
+        Config Context. Used by the Launch Test UI to populate the
+        test_name dropdown so operators can only pick tests the
+        platform actually knows how to run."""
+        if deps.equipment_by_id_provider is None:
+            raise HTTPException(503, "no equipment provider configured")
+        try:
+            panel = deps.equipment_by_id_provider(device_id)
+        except KeyError:
+            raise HTTPException(404, f"unknown device: {device_id}")
+        # The panel record includes the device's Config Context's
+        # active_tests via the loader's effective_configs cache, but we
+        # need the raw test definitions, not the panel record. Pull
+        # from the same provider closure if it exposes the configs.
+        eff = getattr(deps, "_effective_configs_for_devices", None)
+        if eff and device_id in eff:
+            tests = eff[device_id].get("active_tests", []) or []
+            return {"device_id": device_id,
+                    "device_type_slug": eff[device_id].get("device_type_slug", ""),
+                    "active_tests": [{
+                        "name": t["name"], "type": t["type"],
+                        "spec_reference": t.get("spec_reference", ""),
+                        "instrument": t.get("instrument", {}),
+                    } for t in tests]}
+        return {"device_id": device_id, "active_tests": []}
+
     @app.get("/api/v1/devices/{device_id}", dependencies=[Depends(auth)])
     async def device_detail(device_id: str):
         for d in deps.facility_devices:
@@ -301,14 +333,53 @@ def create_app(deps: Deps) -> FastAPI:
     @app.post("/api/v1/discovery/scan", dependencies=[Depends(auth)])
     async def discovery_scan(body: dict):
         scan_id = body.get("scan_id") or "scan-" + str(len(deps.discovery_state) + 1)
-        subnets = body.get("subnets", [])
+        subnets = body.get("subnets", []) or []
+        protocols = body.get("protocols", ["modbus_tcp", "bacnet_ip", "snmp"])
+
+        # Walk the facility devices and report any whose primary_ip falls
+        # inside the requested subnets. For a real deployment this is
+        # replaced with src/discovery.py which actually probes the
+        # network. Here we surface the simulator topology so the UI is
+        # populated with realistic devices.
+        from ipaddress import ip_address, ip_network
+        nets = []
+        for s in subnets:
+            try:
+                nets.append(ip_network(s, strict=False))
+            except ValueError:
+                pass
+        devices = []
+        for d in deps.facility_devices:
+            ip = d.get("primary_ip")
+            if not ip:
+                continue
+            if d.get("protocol") not in protocols:
+                continue
+            try:
+                addr = ip_address(ip)
+            except ValueError:
+                continue
+            if nets and not any(addr in n for n in nets):
+                continue
+            devices.append({
+                "ip": ip, "protocol": d.get("protocol"),
+                "identity": d.get("name") or d.get("device_id"),
+                "device_type_slug": d.get("device_type_slug"),
+                "matched_exact": d.get("device_type_slug") not in ("unknown", None, ""),
+            })
+
+        classified = sum(1 for x in devices if x["matched_exact"])
         deps.discovery_state[scan_id] = {
             "scan_id": scan_id, "subnets": subnets,
-            "status": "running", "devices_found": 0,
-            "devices_classified": 0, "devices_unmatched": 0,
+            "status": "completed",
+            "devices_found": len(devices),
+            "devices_classified": classified,
+            "devices_unmatched": len(devices) - classified,
             "errors": [],
+            "devices": devices,
         }
-        return {"scan_id": scan_id, "status": "running"}
+        return {"scan_id": scan_id, "status": "completed",
+                "devices_found": len(devices)}
 
     @app.get("/api/v1/discovery/status/{scan_id}", dependencies=[Depends(auth)])
     async def discovery_status(scan_id: str):
