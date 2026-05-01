@@ -1,0 +1,83 @@
+{
+  "device_type_slug": "schneider-mtz-1200a",
+  "manufacturer": "Schneider Electric",
+  "model": "MasterPact MTZ 1200A",
+  "category": "circuit_breaker",
+  "ratings": {
+    "rated_amps": 1200,
+    "voltage_class_v": 480,
+    "interrupt_kA": 65,
+    "nominal_open_time_ms": 35.0,
+    "nominal_close_time_ms": 52.0,
+    "nominal_spring_charge_s": 9.0,
+    "nominal_stroke_mm": 100.0,
+    "nominal_trip_coil_a": 8.0,
+    "nominal_close_coil_a": 12.0
+  },
+  "ageing_model": {
+    "kind": "low_voltage_breaker_mech",
+    "params": {
+      "install_year": 2022,
+      "install_month": 6
+    }
+  },
+  "active_tests": [
+    {
+      "name": "breaker_trip_timing",
+      "type": "breaker_timing",
+      "spec_reference": "IEC 62271-100 §6.101 / IEEE C37.09 §6.10",
+      "instrument": {"vendor": "Megger", "model": "TM1800",
+                     "serial": "SN-TM1800-44219",
+                     "cal_cert": "sha256:megger-tm1800-2026-q2"},
+      "parameters": {"mode": "open_close",
+                      "include_motion": true, "include_spring": true,
+                      "include_coils": true},
+      "acceptance": {
+        "timing_tolerance_pct": 10.0,
+        "max_open_simultaneity_ms": 2.0,
+        "max_close_simultaneity_ms": 5.0,
+        "max_spring_charge_s": 12.0
+      }
+    }
+  ],
+  "manual_signoffs": [
+    {"name": "rack_in",
+     "label": "Breaker fully racked in, secondary disconnects engaged",
+     "spec_reference": "Schneider MTZ Installation Manual §4.3"},
+    {"name": "trip_unit_settings",
+     "label": "Micrologic trip unit settings match coordination study",
+     "spec_reference": "IEEE C37.230 §6"}
+  ],
+  "panel": {
+    "header": {
+      "title_template": "Breaker · {device_id}",
+      "crumb_template": "{manufacturer} {model} · IEC 62271-100 acceptance",
+      "status_field": "passed",
+      "status_labels": {"true": "PASSED", "false": "DEFICIENCY"}
+    },
+    "tiles": [
+      {"label": "Manufacturer", "value_field": "manufacturer"},
+      {"label": "Rated", "value_template": "{rated_amps} A · {voltage_class_v} V"},
+      {"label": "Open simul", "value_field": "max_simultaneity_ms.open",
+        "format": "{:.2f} ms"},
+      {"label": "Close simul", "value_field": "max_simultaneity_ms.close",
+        "format": "{:.2f} ms"},
+      {"label": "Spring charge", "value_field": "spring_charge_s",
+        "format": "{:.2f} s"}
+    ],
+    "cards": [
+      {"kind": "table",
+       "title": "Per-pole timing (IEC 62271-100 §6.101.1)",
+       "data_path": "per_pole_rows",
+       "columns": [
+         {"label": "Pole", "field": "pole", "mono": true},
+         {"label": "Open time", "field": "open_ms", "format": "{:.2f} ms", "mono": true},
+         {"label": "Close time", "field": "close_ms", "format": "{:.2f} ms", "mono": true},
+         {"label": "Open status", "kind": "badge", "field": "open_passed",
+          "labels": {"true": "passed", "false": "failed"}},
+         {"label": "Close status", "kind": "badge", "field": "close_passed",
+          "labels": {"true": "passed", "false": "failed"}}
+       ]}
+    ]
+  }
+}

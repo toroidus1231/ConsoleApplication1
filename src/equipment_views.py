@@ -181,6 +181,28 @@ def busway_panel(device_id: str, store: EvidenceStore) -> dict:
     }
 
 
+def circuit_breaker_panel(device_id: str, store: EvidenceStore) -> dict:
+    """Aggregate breaker timing + (later) contact-resistance + insulation
+    runs. For now timing alone, which covers the IEC 62271-100 §6.101
+    mechanical-acceptance scope."""
+    runs = store.list_runs(device_id, "breaker_trip_timing")
+    if not runs:
+        return _no_prior_run(device_id, "circuit_breaker", "breaker_trip_timing")
+    latest = runs[-1]
+    history = []
+    for r in runs[:-1]:
+        delta = (_parse_iso(r["completed_at"]) - _parse_iso(latest["completed_at"])).days
+        history.append({"date_offset_days": delta,
+                        "open_simul_ms": r["max_simultaneity_ms"]["open"],
+                        "close_simul_ms": r["max_simultaneity_ms"]["close"],
+                        "spring_charge_s": r["spring_charge_s"],
+                        "passed": r["passed"]})
+    history.sort(key=lambda h: h["date_offset_days"])
+    panel = dict(latest)
+    panel["history"] = history
+    return panel
+
+
 def relay_panel(device_id: str, store: EvidenceStore) -> dict:
     """Aggregate the two protective-relay tests (secondary + primary
     injection). Either or both may be absent if a particular bay only
@@ -209,6 +231,7 @@ _CATEGORY_DISPATCH = {
     "ats": ats_panel,
     "busway": busway_panel,
     "relay": relay_panel,
+    "circuit_breaker": circuit_breaker_panel,
 }
 
 

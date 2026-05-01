@@ -643,6 +643,19 @@ def _device_lineup(today: datetime) -> list[dict]:
          "overrides": {"install_year": 2022, "install_month": 6}},
         {"device_id": "sel-inc-B2",    "device_type_slug": "sel-751",
          "overrides": {"install_year": 2022, "install_month": 6}},
+        # Schneider MasterPact MTZ 1200A feeder breakers. Mechanical
+        # timing runs through the Megger TM1800 driver per IEC 62271-100
+        # §6.101. (The existing mtz-inc-* IDs model the cable feeding
+        # each breaker for hipot purposes; mtz-cb-* are the breaker
+        # mechanical assets.)
+        {"device_id": "mtz-cb-A1", "device_type_slug": "schneider-mtz-1200a",
+         "overrides": {"install_year": 2022, "install_month": 6}},
+        {"device_id": "mtz-cb-A2", "device_type_slug": "schneider-mtz-1200a",
+         "overrides": {"install_year": 2022, "install_month": 6}},
+        {"device_id": "mtz-cb-B1", "device_type_slug": "schneider-mtz-1200a",
+         "overrides": {"install_year": 2022, "install_month": 6}},
+        {"device_id": "mtz-cb-B2", "device_type_slug": "schneider-mtz-1200a",
+         "overrides": {"install_year": 2022, "install_month": 6}},
     ]
 
 

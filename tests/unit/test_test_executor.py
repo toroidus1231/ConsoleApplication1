@@ -616,6 +616,122 @@ def test_sel_injection_current_a_is_pickup_times_multiple():
 
 
 # ---------------------------------------------------------------------------
+# breaker_timing
+# ---------------------------------------------------------------------------
+
+
+def _breaker_config(install_year: int = 2022):
+    return {
+        "category": "circuit_breaker",
+        "manufacturer": "Schneider Electric",
+        "model": "MTZ 1200A",
+        "ageing_model": {"params": {"install_year": install_year,
+                                     "install_month": 1}},
+        "ratings": {
+            "rated_amps": 1200,
+            "voltage_class_v": 480,
+            "nominal_open_time_ms": 35.0,
+            "nominal_close_time_ms": 52.0,
+            "nominal_spring_charge_s": 9.0,
+            "nominal_stroke_mm": 100.0,
+            "nominal_trip_coil_a": 8.0,
+            "nominal_close_coil_a": 12.0,
+        },
+    }
+
+
+def _breaker_test_def():
+    return {
+        "name": "breaker_trip_timing",
+        "type": "breaker_timing",
+        "spec_reference": "IEC 62271-100 §6.101",
+        "instrument": {"vendor": "Megger", "model": "TM1800"},
+        "parameters": {"mode": "open_close"},
+        "acceptance": {
+            "timing_tolerance_pct": 10.0,
+            "max_open_simultaneity_ms": 2.0,
+            "max_close_simultaneity_ms": 5.0,
+            "max_spring_charge_s": 12.0,
+        },
+    }
+
+
+def test_breaker_timing_shape():
+    rec = execute_test(device_id="mtz-inc-A1",
+                       config=_breaker_config(),
+                       test_def=_breaker_test_def(),
+                       run_date=_today())
+    assert rec["test_type"] == "breaker_timing"
+    assert rec["spec_reference"] == "IEC 62271-100 §6.101"
+    assert set(rec["per_pole"].keys()) == {"A", "B", "C"}
+    for pole_data in rec["per_pole"].values():
+        assert "open_ms" in pole_data
+        assert "close_ms" in pole_data
+        assert "open_passed" in pole_data
+        assert "close_passed" in pole_data
+    assert "open" in rec["max_simultaneity_ms"]
+    assert "close" in rec["max_simultaneity_ms"]
+    assert rec["passed"] is True
+
+
+def test_breaker_timing_in_tolerance_for_new_breaker():
+    # A 2022-installed breaker tested on the 2026-05-01 run date — small
+    # drift, well within the ±10% tolerance.
+    rec = execute_test(device_id="mtz-inc-A1",
+                       config=_breaker_config(install_year=2022),
+                       test_def=_breaker_test_def(),
+                       run_date=_today())
+    for pole_data in rec["per_pole"].values():
+        assert pole_data["open_passed"] is True
+        assert pole_data["close_passed"] is True
+    assert rec["passed"] is True
+
+
+def test_breaker_simultaneity_inside_iec_62271_limits():
+    rec = execute_test(device_id="mtz-inc-A1",
+                       config=_breaker_config(),
+                       test_def=_breaker_test_def(),
+                       run_date=_today())
+    assert rec["max_simultaneity_ms"]["open"] <= 2.0
+    assert rec["max_simultaneity_ms"]["close"] <= 5.0
+
+
+def test_breaker_spring_charge_within_rated_time():
+    rec = execute_test(device_id="mtz-inc-A1",
+                       config=_breaker_config(),
+                       test_def=_breaker_test_def(),
+                       run_date=_today())
+    assert rec["spring_charge_s"] <= 12.0
+    assert rec["spring_charge_passed"] is True
+
+
+def test_breaker_timing_includes_motion_and_coils():
+    rec = execute_test(device_id="mtz-inc-A1",
+                       config=_breaker_config(),
+                       test_def=_breaker_test_def(),
+                       run_date=_today())
+    assert "stroke" in rec
+    assert {"peak_mm", "overtravel_mm", "rebound_mm"} <= set(rec["stroke"].keys())
+    assert "coil_peak" in rec
+    assert {"trip_a", "close_a"} <= set(rec["coil_peak"].keys())
+
+
+def test_breaker_timing_drifts_with_age():
+    young = execute_test(device_id="mtz-inc-A1",
+                         config=_breaker_config(install_year=2024),
+                         test_def=_breaker_test_def(),
+                         run_date=_today())
+    old = execute_test(device_id="mtz-inc-A1",
+                       config=_breaker_config(install_year=2010),
+                       test_def=_breaker_test_def(),
+                       run_date=_today())
+    # Average open-time drifts upward with age (positive base drift).
+    young_avg = sum(p["open_ms"] for p in young["per_pole"].values()) / 3
+    old_avg   = sum(p["open_ms"] for p in old["per_pole"].values()) / 3
+    assert old_avg > young_avg
+
+
+# ---------------------------------------------------------------------------
 # Manual sign-offs + dispatch errors
 # ---------------------------------------------------------------------------
 

@@ -71,12 +71,12 @@ def _eager_register():
     from . import (
         megger_mit525, megger_dlro10x, vitrek_95x,
         qualitrol_118itm, vaisala_opt100, sel_751, cat_emcp,
-        doble_f6150,
+        doble_f6150, megger_tm1800,
     )
     return [
         megger_mit525, megger_dlro10x, vitrek_95x,
         qualitrol_118itm, vaisala_opt100, sel_751, cat_emcp,
-        doble_f6150,
+        doble_f6150, megger_tm1800,
     ]
 
 
