@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sse_starlette.sse import EventSourceResponse
@@ -232,11 +234,24 @@ def create_app(deps: Deps) -> FastAPI:
 
     @app.get("/api/v1/tests/history", dependencies=[Depends(auth)])
     async def test_history(device_id: str | None = None, status_filter: str | None = None):
-        rows = deps.facility_test_runs
+        # Merge pre-recorded historical runs with any executed via this
+        # orchestrator instance so the UI sees newly-launched tests.
+        rows = list(deps.facility_test_runs)
+        if deps.orchestrator is not None:
+            for r in deps.orchestrator._results.values():
+                rows.append({
+                    "test_id": r.test_id, "device_id": r.device_id,
+                    "test_name": r.test_name, "status": r.status,
+                    "started_at": r.started_at, "completed_at": r.completed_at,
+                    "duration_seconds": r.duration_seconds,
+                    "evidence_hashes": r.evidence_hashes,
+                })
         if device_id:
             rows = [r for r in rows if r["device_id"] == device_id]
         if status_filter:
             rows = [r for r in rows if r["status"] == status_filter]
+        # Newest first
+        rows.sort(key=lambda r: r.get("started_at", ""), reverse=True)
         return {"tests": rows}
 
     @app.get("/api/v1/tests/live/{test_id}", dependencies=[Depends(auth)])
@@ -354,7 +369,158 @@ def create_app(deps: Deps) -> FastAPI:
         except KeyError:
             raise HTTPException(404, f"no device: {device_id}")
 
+    # ------------------------------------------------------------------
+    # Operator write paths: punchlist resolve, checklist sign-off,
+    # report generation, BIM import, PDF→Config Context.
+    # ------------------------------------------------------------------
+
+    @app.patch("/api/v1/punchlist/{item_id}", dependencies=[Depends(auth)])
+    async def punchlist_update(item_id: str, body: dict):
+        """Resolve / re-open / change severity of a punch-list item.
+        Mutates the in-memory reconciliation list and appends an
+        attestation record so the change is auditable."""
+        items = getattr(deps.reconciliation, "items", None) or []
+        target = next((i for i in items if i.id == item_id), None)
+        if target is None:
+            raise HTTPException(404, f"no punch-list item: {item_id}")
+        old_status = target.status
+        for k in ("status", "severity", "category", "remediation"):
+            if k in body:
+                setattr(target, k, body[k])
+        if "resolved_by" in body:
+            target.resolved_by = body["resolved_by"]
+        if deps.attestation is not None:
+            from src.types import AttestationRecord
+            await deps.attestation.submit(AttestationRecord(
+                timestamp_ns=int(time.time_ns()),
+                device_id=target.device_id, measurement="punchlist_status",
+                value=1.0 if target.status == "resolved" else 0.0,
+                raw_bytes=f"{item_id}:{old_status}->{target.status}",
+                protocol="ui", source_ip="ui",
+                worker_id=body.get("resolved_by", "operator"),
+            ))
+        return {"id": item_id, "status": target.status, "ok": True}
+
+    @app.post("/api/v1/checklist/{device_id}/{item_id}", dependencies=[Depends(auth)])
+    async def checklist_signoff(device_id: str, item_id: str, request: Request):
+        """Record an operator sign-off for a physical-verification
+        checklist item. Persists in deps.facility_checklists and
+        attestation chain."""
+        form = await request.form()
+        signed_by = form.get("signed_by", "operator")
+        note = form.get("note", "")
+        items = deps.facility_checklists.get(device_id, [])
+        item = next((i for i in items if i.get("id") == item_id), None)
+        if item is None:
+            raise HTTPException(404, f"no checklist item: {device_id}/{item_id}")
+        item["signed"] = True
+        item["signed_by"] = signed_by
+        item["signed_at"] = datetime.now(timezone.utc).isoformat()
+        if note:
+            item["note"] = note
+        if deps.attestation is not None:
+            from src.types import AttestationRecord
+            await deps.attestation.submit(AttestationRecord(
+                timestamp_ns=int(time.time_ns()),
+                device_id=device_id, measurement="checklist_signoff",
+                value=1.0,
+                raw_bytes=f"{item_id}:{signed_by}",
+                protocol="ui", source_ip="ui",
+                worker_id=signed_by,
+            ))
+        return {"device_id": device_id, "item_id": item_id, "ok": True,
+                "signed_at": item["signed_at"]}
+
+    @app.post("/api/v1/reports/generate", dependencies=[Depends(auth)])
+    async def reports_generate(body: dict | None = None):
+        """Generate a commissioning-report PDF from the current punch
+        list + attestation summary. Returns the PDF bytes."""
+        items = getattr(deps.reconciliation, "items", None) or []
+        chain = deps.attestation.verify_chain() if deps.attestation else {
+            "valid": True, "length": 0, "last_hash": "",
+        }
+        from src.reports import AttestationSummary, generate_pdf
+        summary = AttestationSummary(
+            facility=(body or {}).get("facility", "DC1-Ashburn"),
+            chain_length=chain.get("length", 0),
+            first_hash=chain.get("first_hash", ""),
+            last_hash=chain.get("last_hash", ""),
+            chain_valid=chain.get("valid", True),
+        )
+        pdf_bytes = generate_pdf(
+            items, summary,
+            title=(body or {}).get("title", "Commissioning Report"),
+            subtitle=(body or {}).get("subtitle"),
+        )
+        return Response(
+            content=pdf_bytes, media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=commissioning-report.pdf"},
+        )
+
+    @app.post("/api/v1/bim/import", dependencies=[Depends(auth)])
+    async def bim_import(file: UploadFile = File(...)):
+        """Parse an uploaded IFC file via src/bim_import.py and return
+        the device list it produced. Persists to NetBox if configured;
+        otherwise returns the parsed entities for inspection."""
+        from src.bim_import import parse_design
+        # Save to a tempfile so the IFC parser (which expects a path) can read it.
+        import tempfile, os
+        suffix = os.path.splitext(file.filename or "design.ifc")[1] or ".ifc"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+        try:
+            if deps.bim is None or not hasattr(deps.bim, "parser"):
+                # No real ifcopenshell wired — accept the upload but
+                # report what we'd parse.
+                return {"ok": True, "filename": file.filename,
+                        "size_bytes": os.path.getsize(tmp_path),
+                        "note": "BIM parser not configured in this deployment; file accepted but not parsed."}
+            design = parse_design(tmp_path, parser=deps.bim.parser)
+            return {"ok": True, "filename": file.filename,
+                    "entities": [_entity_to_dict(e) for e in design.entities],
+                    "connections": design.connections}
+        finally:
+            os.unlink(tmp_path)
+
+    @app.post("/api/v1/config/generate", dependencies=[Depends(auth)])
+    async def config_generate(file: UploadFile = File(...),
+                              device_type_slug: str = Form(...)):
+        """Run an uploaded manufacturer PDF through pdf_pipeline →
+        Claude → validated Config Context. Returns the generated JSON."""
+        from src.pdf_pipeline import extract_config_context
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+        try:
+            if deps.pdf_pipeline is None:
+                return {"ok": False,
+                        "error": "PDF pipeline not configured (no PDF reader / LLM in this deployment).",
+                        "device_type_slug": device_type_slug,
+                        "filename": file.filename}
+            result = await extract_config_context(
+                tmp_path,
+                pdf_reader=deps.pdf_pipeline.reader,
+                llm=deps.pdf_pipeline.llm,
+            )
+            return {
+                "ok": result.config_context is not None,
+                "device_type_slug": device_type_slug,
+                "config_context": result.config_context,
+                "validation_errors": result.validation_errors,
+                "warnings": result.warnings,
+            }
+        finally:
+            os.unlink(tmp_path)
+
     return app
+
+
+def _entity_to_dict(e):
+    return {"id": e.id, "type": e.type, "name": e.name,
+            "device_type_slug": e.device_type_slug,
+            "location": e.location, "properties": e.properties}
 
 
 async def fanout_loop(deps: Deps) -> None:

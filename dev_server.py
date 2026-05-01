@@ -351,13 +351,71 @@ def checklists_for(devices):
             items = [
                 {"id": "rails", "description": "Verify slide rails fully seated",
                  "category": "structural", "requires_photo": False,
-                 "acceptance_criteria": "No play in either rail", "completed": False},
+                 "acceptance_criteria": "No play in either rail", "completed": False, "signed": False},
                 {"id": "cable_routing", "description": "Verify NDR Infiniband cables routed per design",
                  "category": "labeling", "requires_photo": True,
-                 "acceptance_criteria": "Bend radius >= 4× cable diameter", "completed": False},
+                 "acceptance_criteria": "Bend radius >= 4× cable diameter", "completed": False, "signed": False},
                 {"id": "bezel", "description": "Verify front bezel installed and undamaged",
                  "category": "cosmetic", "requires_photo": False,
-                 "acceptance_criteria": "Clean, no scratches, locked", "completed": False},
+                 "acceptance_criteria": "Clean, no scratches, locked", "completed": False, "signed": False},
+            ]
+        elif d.device_type_slug == "oil-xfmr-2500kva":
+            items = [
+                {"id": "nameplate", "description": "Verify nameplate matches BIM (kVA, ratio, vector group)",
+                 "category": "labeling", "requires_photo": True,
+                 "acceptance_criteria": "2500 kVA, 13.8/0.48 kV, Dyn1", "completed": False, "signed": False},
+                {"id": "oil_level", "description": "Verify oil-level sight glass within MIN/MAX",
+                 "category": "structural", "requires_photo": True,
+                 "acceptance_criteria": "Oil level between MIN and MAX marks at ambient temp", "completed": False, "signed": False},
+                {"id": "ground", "description": "Verify ground stud bonded to facility ground grid",
+                 "category": "safety", "requires_photo": False,
+                 "acceptance_criteria": "Continuity ≤ 0.5 Ω to ground reference", "completed": False, "signed": False},
+                {"id": "bushings", "description": "Visual: HV/LV bushings clean, no carbon tracking",
+                 "category": "cosmetic", "requires_photo": True,
+                 "acceptance_criteria": "No visible cracks, contamination, or arcing marks", "completed": False, "signed": False},
+            ]
+        elif d.device_type_slug.startswith("schneider-gma") or \
+             d.device_type_slug.startswith("schneider-mtz"):
+            items = [
+                {"id": "racked_in", "description": "Breaker fully racked in",
+                 "category": "safety", "requires_photo": False,
+                 "acceptance_criteria": "Mech-position window shows CONNECTED", "completed": False, "signed": False},
+                {"id": "spring_charged", "description": "Closing spring charged",
+                 "category": "operational", "requires_photo": False,
+                 "acceptance_criteria": "Spring-charge indicator green", "completed": False, "signed": False},
+                {"id": "lockout", "description": "Lockout/tagout removed for energization",
+                 "category": "safety", "requires_photo": True,
+                 "acceptance_criteria": "Lockout permit closed; hasps removed", "completed": False, "signed": False},
+            ]
+        elif d.device_type_slug == "apc-symmetra-mw":
+            items = [
+                {"id": "battery_temp", "description": "Verify battery cabinet ambient ≤ 25 °C",
+                 "category": "operational", "requires_photo": False,
+                 "acceptance_criteria": "≤ 25 °C across all 4 quadrants", "completed": False, "signed": False},
+                {"id": "egress_clearance", "description": "Verify 36\" egress clearance front/back",
+                 "category": "safety", "requires_photo": True,
+                 "acceptance_criteria": "Per NFPA 70E §130.6", "completed": False, "signed": False},
+            ]
+        elif d.device_type_slug == "cat-3516b":
+            items = [
+                {"id": "fuel_level", "description": "Verify day-tank fuel level ≥ 90 %",
+                 "category": "operational", "requires_photo": False,
+                 "acceptance_criteria": "≥ 90 % per panel gauge + dipstick verification", "completed": False, "signed": False},
+                {"id": "exhaust", "description": "Verify exhaust path unobstructed, rain cap operational",
+                 "category": "safety", "requires_photo": True,
+                 "acceptance_criteria": "No obstruction within 10 ft of stack", "completed": False, "signed": False},
+                {"id": "block_heater", "description": "Verify block heater energized, coolant ≥ 38 °C",
+                 "category": "operational", "requires_photo": False,
+                 "acceptance_criteria": "Coolant 38-49 °C per NFPA 110 §5.4.1", "completed": False, "signed": False},
+            ]
+        elif d.device_type_slug == "asco-7000":
+            items = [
+                {"id": "transfer_label", "description": "Verify NORMAL/EMERGENCY labels and direction arrows",
+                 "category": "labeling", "requires_photo": True,
+                 "acceptance_criteria": "Labels per NEC §700.7", "completed": False, "signed": False},
+                {"id": "neutral_bond", "description": "Verify neutral bonding scheme matches design",
+                 "category": "safety", "requires_photo": False,
+                 "acceptance_criteria": "Switched neutral or solidly bonded per design intent", "completed": False, "signed": False},
             ]
         if items:
             by_dev[d.device_id] = items
@@ -370,9 +428,17 @@ def checklists_for(devices):
 
 
 def _ups_test_device(dev_id="ups-A"):
+    """The UPS battery-transfer test_def with full Modbus execution
+    details (preconditions, monitor registers, command, acceptance,
+    restore). This is what test_engine.execute() needs in
+    device.config_context['active_tests'] to actually run a test.
+
+    Production would have these execution-level details on every
+    Config Context. For the demo only this one device is wired
+    end-to-end; others are panel-shape-only."""
     return DeviceInfo(
         device_id=dev_id, name=dev_id, primary_ip="10.4.1.10",
-        device_type_slug="apc-symmetra",
+        device_type_slug="apc-symmetra-mw",
         config_context={
             "protocol": "modbus_tcp",
             "active_tests": [{
@@ -396,6 +462,46 @@ def _ups_test_device(dev_id="ups-A"):
         },
         protocol="modbus_tcp", site="DC1-Ashburn", rack="UPS-A", position=10,
     )
+
+
+def _make_device_loader(effective_configs: dict[str, dict]):
+    """Returns a device_loader for the orchestrator that resolves a
+    device_id to a DeviceInfo with its Config Context attached.
+
+    For ups-A, returns the fully-wired Modbus DeviceInfo so the test
+    engine can actually execute against the simulator.
+
+    For every other device, returns a DeviceInfo whose active_tests
+    come from its JSON Config Context. Those don't yet have execution-
+    level fields (preconditions/command/monitor/acceptance/restore)
+    so the engine will return 'test definition incomplete' — the
+    correct error rather than 'device not found'."""
+    ups_test = _ups_test_device()
+
+    async def device_loader(device_id: str) -> DeviceInfo:
+        if device_id == "ups-A":
+            return ups_test
+        cfg = effective_configs.get(device_id)
+        if cfg is None:
+            # Unknown device — engine will fail cleanly with 'not found'
+            return DeviceInfo(
+                device_id=device_id, name=device_id, primary_ip="0.0.0.0",
+                device_type_slug="unknown", config_context={"active_tests": []},
+                protocol="unknown", site="DC1-Ashburn", rack="?", position=0,
+            )
+        return DeviceInfo(
+            device_id=device_id, name=device_id, primary_ip="0.0.0.0",
+            device_type_slug=cfg["device_type_slug"],
+            config_context={
+                "protocol": "synthetic",
+                "active_tests": cfg.get("active_tests", []),
+                "manual_signoffs": cfg.get("manual_signoffs", []),
+            },
+            protocol="synthetic", site="DC1-Ashburn",
+            rack=cfg.get("ratings", {}).get("rack", "?"), position=0,
+        )
+
+    return device_loader
 
 
 def _build_bridge(simulator):
@@ -628,14 +734,10 @@ async def main():
     test_engine = TestEngine(config, influx, attest, events,
                              poller=poller, writer=writer,
                              manual_confirm_timeout=300.0)
-    test_device = _ups_test_device()
-
-    async def device_loader(_id):
-        return test_device
 
     orch = Orchestrator(
         config, executor=test_engine.execute, event_queue=events,
-        device_loader=device_loader,
+        device_loader=_make_device_loader(effective_configs),
         power_graph=build_power_graph_from_connections(
             [(d.device_id, d.power_source_id) for d in devices if d.power_source_id]
         ),
