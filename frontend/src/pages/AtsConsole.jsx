@@ -121,50 +121,68 @@ function formatT(ms) {
   return `+${(ms / 3_600_000).toFixed(2)}h`;
 }
 
-function TransferTimeline({ sequence }) {
-  const W = 1200, H = 90;
-  const padX = 60;
-  const axisY = 56;
-  const totalMs = Math.max(1, sequence[sequence.length - 1].t_offset_ms);
-  const xFor = (ms) => padX + Math.pow(ms / totalMs, 0.42) * (W - 2 * padX);
+function clusterPhases(sequence) {
+  // Group consecutive steps whose time gap to the previous step is less than
+  // a phase boundary (60 s). Each cluster becomes a phase card.
+  const phases = [];
+  const boundaryMs = 60_000;
+  for (let i = 0; i < sequence.length; i++) {
+    const s = sequence[i];
+    const last = phases[phases.length - 1];
+    if (!last || s.t_offset_ms - last.endMs >= boundaryMs) {
+      phases.push({ steps: [s], startMs: s.t_offset_ms, endMs: s.t_offset_ms });
+    } else {
+      last.steps.push(s);
+      last.endMs = s.t_offset_ms;
+    }
+  }
+  return phases;
+}
 
+function phaseTitle(phase, index, totalPhases) {
+  const names = phase.steps.map((s) => (s.step || "").toLowerCase());
+  if (names.some((n) => n.includes("transfer to source"))) return "Transfer to alternate";
+  if (names.some((n) => n.includes("return to utility")))  return "Return to utility";
+  if (names.some((n) => n.includes("cooldown")))           return "Cooldown";
+  if (names.every((n) => n.startsWith("pre-test")))        return "Pre-test";
+  if (index === 0) return "Pre-test";
+  if (index === totalPhases - 1) return "Cooldown";
+  return `Phase ${index + 1}`;
+}
+
+function TransferTimeline({ sequence }) {
+  const phases = clusterPhases(sequence);
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet">
-        <line x1={padX} y1={axisY} x2={W - padX} y2={axisY}
-              stroke="var(--border-strong)" strokeWidth="2" />
-        <text x={padX} y={20} fontSize="13" fill="var(--text-tertiary)"
-              fontFamily="var(--font-mono)">
-          T₀ utility loss
-        </text>
-        <text x={W - padX} y={20} fontSize="13" fill="var(--text-tertiary)"
-              fontFamily="var(--font-mono)" textAnchor="end">
-          retransfer + cooldown
-        </text>
-        {sequence.map((s, i) => {
-          const x = xFor(s.t_offset_ms);
-          return (
-            <g key={i}>
-              <circle cx={x} cy={axisY} r="12"
-                      fill={s.passed ? "var(--pass)" : "var(--fail)"}
-                      stroke="var(--bg-base)" strokeWidth="2" />
-              <text x={x} y={axisY + 5} fontSize="14" fill="var(--text-inverse)"
-                    textAnchor="middle" fontFamily="var(--font-mono)" fontWeight="700">
-                {i + 1}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="timeline-legend">
-        {sequence.map((s, i) => (
-          <div key={i} className="timeline-legend-row">
-            <span className={s.passed ? "tl-num pass" : "tl-num fail"}>{i + 1}</span>
-            <span className="tl-time">{formatT(s.t_offset_ms)}</span>
-            <span className="tl-step">{s.step || s.name || ""}</span>
-          </div>
-        ))}
-      </div>
+    <div className="ats-pipeline">
+      {phases.map((p, i) => {
+        const allPassed = p.steps.every((s) => s.passed);
+        const range = p.startMs === p.endMs
+          ? formatT(p.startMs)
+          : `${formatT(p.startMs)} → ${formatT(p.endMs)}`;
+        return (
+          <React.Fragment key={i}>
+            <div className={`ats-phase ${allPassed ? "ok" : "bad"}`}>
+              <div className="ats-phase-head">
+                <span className="ats-phase-idx">{String(i + 1).padStart(2, "0")}</span>
+                <span className="ats-phase-name">{phaseTitle(p, i, phases.length)}</span>
+                <span className={`ats-phase-status ${allPassed ? "ok" : "bad"}`}>
+                  {allPassed ? "PASS" : "FAIL"}
+                </span>
+              </div>
+              <div className="ats-phase-range">{range}</div>
+              <ul className="ats-phase-steps">
+                {p.steps.map((s, j) => (
+                  <li key={j} className={s.passed ? "ok" : "bad"}>
+                    <span className="ats-step-t">{formatT(s.t_offset_ms)}</span>
+                    <span className="ats-step-name">{s.step || s.name || ""}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {i < phases.length - 1 && <div className="ats-phase-link" aria-hidden />}
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }

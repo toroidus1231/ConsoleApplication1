@@ -986,36 +986,98 @@ select {
 .hmi-btn      { font-size: 10px; fill: var(--text-primary); font-weight: 700; }
 .hmi-alarm    { font-size: 10px; fill: var(--fail); font-weight: 700; letter-spacing: 0.04em; }
 
-/* Transfer-timeline legend (ATS console) */
-.timeline-legend {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px 28px;
-  padding: 14px 6px 4px;
+/* ATS transfer-pipeline: phase cards connected by hairlines */
+.ats-pipeline {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 18px 6px 8px;
+  overflow-x: auto;
 }
-.timeline-legend-row {
-  display: grid;
-  grid-template-columns: 28px 64px 1fr;
+.ats-phase {
+  flex: 1 1 0;
+  min-width: 220px;
+  border: 1px solid var(--border-default);
+  border-left: 2px solid var(--pass-line);
+  background: var(--bg-elev-1);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ats-phase.bad { border-left-color: var(--fail-line); }
+.ats-phase-head {
+  display: flex;
   align-items: center;
   gap: 10px;
+}
+.ats-phase-idx {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+.ats-phase-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.ats-phase-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+.ats-phase-status.ok  { color: var(--pass); background: var(--pass-dim); border: 1px solid var(--pass-line); }
+.ats-phase-status.bad { color: var(--fail); background: var(--fail-dim); border: 1px solid var(--fail-line); }
+.ats-phase-range {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+.ats-phase-steps {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+.ats-phase-steps li {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  align-items: baseline;
   color: var(--text-secondary);
 }
-.tl-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+.ats-phase-steps li::before {
+  content: "";
+  position: absolute;
+  margin-left: -10px;
+  margin-top: 6px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  font-weight: 700;
-  color: var(--text-inverse);
+  background: var(--pass);
 }
-.tl-num.pass { background: var(--pass); }
-.tl-num.fail { background: var(--fail); }
-.tl-time { color: var(--text-primary); font-weight: 600; }
-.tl-step { color: var(--text-secondary); }
-@media (min-width: 1100px) {
-  .timeline-legend { grid-template-columns: repeat(3, 1fr); }
+.ats-phase-steps li.bad::before { background: var(--fail); }
+.ats-step-t    { color: var(--text-tertiary); }
+.ats-step-name { color: var(--text-primary); }
+.ats-phase-link {
+  align-self: center;
+  width: 16px;
+  height: 1px;
+  background: var(--border-strong);
+  margin: 0 -1px;
+  flex: 0 0 16px;
 }
