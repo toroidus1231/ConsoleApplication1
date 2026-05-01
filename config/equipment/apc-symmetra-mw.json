@@ -1,0 +1,46 @@
+{
+  "device_type_slug": "apc-symmetra-mw",
+  "manufacturer": "APC by Schneider Electric",
+  "model": "Symmetra MW 750 kW",
+  "category": "ups",
+  "ratings": {
+    "rated_kw": 750,
+    "cells_count": 240,
+    "cell_nominal_v": 3.65,
+    "cell_weak_threshold_v": 3.55,
+    "nominal_v": 480
+  },
+  "ageing_model": {
+    "kind": "battery_lithium",
+    "params": {
+      "cell_aging_per_year": 0.005,
+      "weak_cell_aging_per_year": 0.015,
+      "dip_v_per_year": 1.0,
+      "dip_v_initial": 14.0,
+      "switchover_ms_per_year": 0.18,
+      "switchover_ms_initial": 8.0
+    }
+  },
+  "active_tests": [
+    {
+      "name": "ups_battery_transfer",
+      "type": "ups_battery_transfer",
+      "spec_reference": "IEEE 1184 / IEC 62040-3 Class 3 (≤ 10 ms switchover)",
+      "instrument": {
+        "vendor": "APC", "model": "Symmetra Service Bypass",
+        "serial": "(integrated)",
+        "cal_cert": "sha256:apc-symmetra-2026-q1"
+      },
+      "parameters": {
+        "waveform_seconds": 60,
+        "sample_period_ms": 100
+      },
+      "acceptance": {
+        "min_voltage_v": 460.0,
+        "max_switchover_ms": 10.0,
+        "max_weak_cells": 5
+      }
+    }
+  ],
+  "manual_signoffs": []
+}

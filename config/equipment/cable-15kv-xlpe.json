@@ -1,0 +1,39 @@
+{
+  "device_type_slug": "cable-15kv-xlpe",
+  "manufacturer": "Generic",
+  "model": "15 kV-class XLPE cable",
+  "category": "cable",
+  "ratings": {
+    "rated_kv": 13.8,
+    "voltage_class_kv": 15
+  },
+  "ageing_model": {
+    "kind": "insulation_only",
+    "params": {
+      "initial_megohm_default": 220.0,
+      "aging_per_year_default": 0.045
+    }
+  },
+  "active_tests": [
+    {
+      "name": "cable_hipot",
+      "type": "dc_withstand",
+      "spec_reference": "NETA ATS-17 Table 100.5 (15 kV class) / IEEE 400.1 maintenance",
+      "instrument": {
+        "vendor": "Vitrek", "model": "95X",
+        "serial": "SN-VTK-95X-12345",
+        "cal_cert": "sha256:vitrek-95x-2026-q2"
+      },
+      "parameters": {
+        "test_factor": 0.8,
+        "ramp_seconds": 60,
+        "hold_seconds": 600,
+        "test_kind": "ieee_400_maintenance"
+      },
+      "acceptance": {
+        "max_leakage_ma": 0.5
+      }
+    }
+  ],
+  "manual_signoffs": []
+}

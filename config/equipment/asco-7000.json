@@ -1,0 +1,36 @@
+{
+  "device_type_slug": "asco-7000",
+  "manufacturer": "ASCO",
+  "model": "7000 Series ATS 4000 A",
+  "category": "ats",
+  "ratings": {
+    "rated_amps": 4000
+  },
+  "ageing_model": {
+    "kind": "ats_cross_reference",
+    "params": {}
+  },
+  "active_tests": [
+    {
+      "name": "ats_transfer",
+      "type": "ats_transfer_sequence",
+      "spec_reference": "NFPA 110 Type 10 / IEEE 446 §6.5 / spec §4.3",
+      "instrument": {
+        "vendor": "ASCO", "model": "7000 Service Mode",
+        "serial": "(integrated)",
+        "cal_cert": "sha256:asco-7000-2026-q1"
+      },
+      "parameters": {
+        "transfer_acceptance_seconds": 30,
+        "hold_minutes": 5,
+        "cooldown_minutes": 5
+      },
+      "acceptance": {
+        "max_transfer_seconds": 30.0,
+        "min_voltage_during_v": 460.0,
+        "all_downstream_must_stay_online": true
+      }
+    }
+  ],
+  "manual_signoffs": []
+}

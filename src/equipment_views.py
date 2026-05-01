@@ -1,13 +1,14 @@
 """Equipment-panel views.
 
-The API endpoint /api/v1/equipment/{kind}/{device_id} delegates here.
-Each view function reads the latest run plus historical runs from the
-EvidenceStore (which the test engine writes to) and assembles the
-panel-shaped record the React HMI expects.
+The /api/v1/equipment/{kind}/{device_id} endpoint dispatches here.
+Dispatch is by `category` field on the device's Config Context, not by
+URL kind. The URL kind is treated as the category alias (xfmr, hipot,
+busway, …) and resolved against the Config Context registry.
 
-Returns {"no_prior_run": True, ...} when nothing has been recorded for
-that device + test. The panel renders a "no run on file" state instead
-of inventing data.
+Each panel function reads the latest run + history from the
+EvidenceStore (the platform-shared MinIO-backed store; in dev it's the
+in-memory shim). Returns {"no_prior_run": True, ...} when nothing has
+been recorded.
 """
 
 from __future__ import annotations
@@ -18,116 +19,137 @@ from typing import Any
 from .evidence_store import EvidenceStore
 
 
-KIND_TO_TEST_NAME = {
-    "hipot": "cable_hipot",
-    "cable": "cable_hipot",
+# Aliases the URL can use → canonical category on the Config Context
+URL_KIND_TO_CATEGORY = {
+    "hipot": "cable",
+    "cable": "cable",
+    "transformer": "transformer",
+    "xfmr": "transformer",
+    "generator": "generator",
+    "gen": "generator",
+    "gens": "generator",
+    "ups": "ups",
+    "ats": "ats",
+    "busway": "busway",
 }
 
 
 def _parse_iso(s: str) -> datetime:
-    # Accept both "...Z" and offset-naive ISO strings.
     if s.endswith("Z"):
         s = s[:-1]
     return datetime.fromisoformat(s)
 
 
-def _no_prior_run(device_id: str, kind: str, test_name: str) -> dict:
+def _no_prior_run(device_id: str, category: str, test_name: str) -> dict:
     return {
         "device_id": device_id,
-        "kind": kind,
+        "kind": category,
         "test_name": test_name,
         "no_prior_run": True,
     }
 
 
-def hipot_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
+def _trend(runs: list, key: str) -> list:
+    if not runs:
+        return []
+    latest_at = _parse_iso(runs[-1]["completed_at"])
+    out = []
+    for r in runs[:-1]:
+        delta = (_parse_iso(r["completed_at"]) - latest_at).days
+        out.append({"date_offset_days": delta, "value": r.get(key),
+                    "passed": r["passed"]})
+    out.sort(key=lambda x: x["date_offset_days"])
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Per-category panel builders
+# ---------------------------------------------------------------------------
+
+
+def cable_panel(device_id: str, store: EvidenceStore) -> dict:
     runs = store.list_runs(device_id, "cable_hipot")
     if not runs:
-        return _no_prior_run(device_id, "hipot", "cable_hipot")
-
+        return _no_prior_run(device_id, "cable", "cable_hipot")
     latest = runs[-1]
-    latest_at = _parse_iso(latest["completed_at"])
     history = []
     for r in runs[:-1]:
-        delta_days = (_parse_iso(r["completed_at"]) - latest_at).days
-        history.append({
-            "date_offset_days": delta_days,
-            "max_leakage_ma": r["peak_leakage_ma"],
-            "passed": r["passed"],
-        })
+        delta = (_parse_iso(r["completed_at"]) - _parse_iso(latest["completed_at"])).days
+        history.append({"date_offset_days": delta,
+                        "max_leakage_ma": r["peak_leakage_ma"],
+                        "passed": r["passed"]})
     history.sort(key=lambda h: h["date_offset_days"])
     panel = dict(latest)
     panel["history"] = history
     return panel
 
 
-def transformer_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
-    runs = store.list_runs(device_id, "transformer_commissioning")
-    if not runs:
+def transformer_panel(device_id: str, store: EvidenceStore) -> dict:
+    """Aggregate the four transformer tests (DGA, TTR, PI, hipot history)."""
+    dga_runs    = store.list_runs(device_id, "dga_initial_sample")
+    ttr_runs    = store.list_runs(device_id, "transformer_turns_ratio")
+    pi_runs     = store.list_runs(device_id, "polarization_index")
+    hipot_runs  = store.list_runs(device_id, "transformer_hipot")
+    if not (dga_runs or ttr_runs or pi_runs or hipot_runs):
         return _no_prior_run(device_id, "transformer", "transformer_commissioning")
-    return dict(runs[-1])
+    dga = dga_runs[-1] if dga_runs else {}
+    ttr = ttr_runs[-1] if ttr_runs else {}
+    pi  = pi_runs[-1] if pi_runs else {}
+    hp  = hipot_runs[-1] if hipot_runs else {}
+    return {
+        "device_id": device_id,
+        "rated_kva": 2500,
+        "voltage_class": "13.8 kV / 480 V",
+        "vector_group": "Dyn1",
+        "fault_state": dga.get("fault_state", "healthy"),
+        "current_gases": dga.get("current_gases", {}),
+        "dga_history": dga.get("dga_history", []),
+        "ttr": ttr.get("ttr", []),
+        "polarization_index": pi.get("polarization_index", {"value": 0, "curve": [], "passed": False}),
+        "hipot_history": hp.get("hipot_history", []),
+        "passed": all(r.get("passed", True) for r in (dga, ttr, pi, hp) if r),
+    }
 
 
-def generator_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
-    runs = store.list_runs(device_id, "generator_loadbank")
+def generator_panel(device_id: str, store: EvidenceStore) -> dict:
+    runs = store.list_runs(device_id, "generator_load_bank")
     if not runs:
         return _no_prior_run(device_id, "generator", "generator_loadbank")
     return dict(runs[-1])
 
 
-def ups_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
+def ups_panel(device_id: str, store: EvidenceStore) -> dict:
     runs = store.list_runs(device_id, "ups_battery_transfer")
     if not runs:
         return _no_prior_run(device_id, "ups", "ups_battery_transfer")
-
     latest = runs[-1]
-    latest_at = _parse_iso(latest["completed_at"])
     transfer_history = []
     for r in runs[:-1]:
-        delta_days = (_parse_iso(r["completed_at"]) - latest_at).days
-        transfer_history.append({
-            "date_offset_days": delta_days,
-            "passed": r["passed"],
-            "min_voltage_v": r["min_voltage_v"],
-            "switchover_ms": r["switchover_ms"],
-        })
+        delta = (_parse_iso(r["completed_at"]) - _parse_iso(latest["completed_at"])).days
+        transfer_history.append({"date_offset_days": delta,
+                                 "passed": r["passed"],
+                                 "min_voltage_v": r["min_voltage_v"],
+                                 "switchover_ms": r["switchover_ms"]})
     transfer_history.sort(key=lambda h: h["date_offset_days"])
     panel = dict(latest)
     panel["transfer_history"] = transfer_history
     return panel
 
 
-def ats_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
+def ats_panel(device_id: str, store: EvidenceStore) -> dict:
     runs = store.list_runs(device_id, "ats_transfer")
     if not runs:
         return _no_prior_run(device_id, "ats", "ats_transfer")
     return dict(runs[-1])
 
 
-def busway_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
-    """Aggregate the three instrument-driven busway tests + manual
-    sign-offs into one panel record. Manual sign-offs are stored under
-    test_name='busway_manual' just like the instrument runs, so the
-    panel reads everything via one EvidenceStore interface."""
+def busway_panel(device_id: str, store: EvidenceStore) -> dict:
     megger_runs = store.list_runs(device_id, "busway_megger")
     hipot_runs  = store.list_runs(device_id, "busway_hipot")
     dlro_runs   = store.list_runs(device_id, "busway_dlro")
     manual_runs = store.list_runs(device_id, "busway_manual")
     if not (megger_runs or hipot_runs or dlro_runs):
         return _no_prior_run(device_id, "busway", "busway_acceptance")
-
-    def _trend(runs, key):
-        if not runs:
-            return []
-        latest_at = _parse_iso(runs[-1]["completed_at"])
-        out = []
-        for r in runs[:-1]:
-            delta = (_parse_iso(r["completed_at"]) - latest_at).days
-            out.append({"date_offset_days": delta,
-                        "value": r.get(key),
-                        "passed": r["passed"]})
-        out.sort(key=lambda x: x["date_offset_days"])
-        return out
 
     megger = megger_runs[-1] if megger_runs else None
     hipot  = hipot_runs[-1]  if hipot_runs  else None
@@ -159,21 +181,32 @@ def busway_panel(device_id: str, store: EvidenceStore) -> dict[str, Any]:
     }
 
 
-_KIND_DISPATCH = {
-    "hipot": hipot_panel,
-    "cable": hipot_panel,
+_CATEGORY_DISPATCH = {
+    "cable": cable_panel,
     "transformer": transformer_panel,
-    "xfmr": transformer_panel,
     "generator": generator_panel,
-    "gen": generator_panel,
     "ups": ups_panel,
     "ats": ats_panel,
     "busway": busway_panel,
 }
 
 
-def build_panel(kind: str, device_id: str, store: EvidenceStore) -> dict[str, Any]:
-    fn = _KIND_DISPATCH.get(kind)
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+
+def build_panel(kind: str, device_id: str, store: EvidenceStore) -> dict:
+    """`kind` is the URL alias from the route. Resolve to the canonical
+    category on the device's Config Context and dispatch.
+
+    In production (NetBox-backed), the device's category is looked up in
+    NetBox via device_type_slug. For the demo, the URL alias maps
+    directly to the category."""
+    category = URL_KIND_TO_CATEGORY.get(kind)
+    if category is None:
+        raise KeyError(f"unknown URL kind: {kind!r}")
+    fn = _CATEGORY_DISPATCH.get(category)
     if fn is None:
-        raise KeyError(f"no view registered for kind: {kind}")
+        raise KeyError(f"no panel registered for category: {category!r}")
     return fn(device_id, store)

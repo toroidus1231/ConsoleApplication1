@@ -1,0 +1,66 @@
+{
+  "device_type_slug": "vertiv-impb-1250a",
+  "manufacturer": "Vertiv",
+  "model": "PowerBar iMPB 1250A",
+  "category": "busway",
+  "ratings": {
+    "rated_amps": 1250,
+    "voltage_class_v": 600,
+    "length_m_default": 24.0
+  },
+  "ageing_model": {
+    "kind": "insulation_plus_joints",
+    "params": {
+      "initial_megohm_default": 4000.0,
+      "aging_per_year_default": 0.020,
+      "initial_joint_uohm": 22.0,
+      "joint_aging_per_year": 0.012
+    }
+  },
+  "active_tests": [
+    {
+      "name": "busway_megger",
+      "type": "insulation_resistance",
+      "spec_reference": "IEC 61439-6 §10.10",
+      "instrument": {"vendor": "Megger", "model": "MIT525",
+                     "serial": "SN-MIT-78421",
+                     "cal_cert": "sha256:megger-mit525-2026-q1"},
+      "parameters": {"test_voltage_v": 1000, "applied_seconds": 60,
+                     "phase_pairs": [["A","B"],["B","C"],["A","C"],["A","G"],["B","G"],["C","G"]]},
+      "acceptance": {"min_megohm": 100.0}
+    },
+    {
+      "name": "busway_hipot",
+      "type": "dc_withstand",
+      "spec_reference": "NETA ATS-17 §7.4 (600 V class)",
+      "instrument": {"vendor": "Vitrek", "model": "95X",
+                     "serial": "SN-VTK-95X-12345",
+                     "cal_cert": "sha256:vitrek-95x-2026-q2"},
+      "parameters": {"target_kv": 2.5, "ramp_seconds": 60, "hold_seconds": 60,
+                     "test_kind": "fixed_kv"},
+      "acceptance": {"max_leakage_ma": 1.0}
+    },
+    {
+      "name": "busway_dlro",
+      "type": "joint_resistance_dlro",
+      "spec_reference": "Vertiv PowerBar iMPB field service guide",
+      "instrument": {"vendor": "Megger", "model": "DLRO10X",
+                     "serial": "SN-DLRO-44219",
+                     "cal_cert": "sha256:megger-dlro10x-2026-q1"},
+      "parameters": {"test_current_a": 10.0, "joints_per_meter": 0.5,
+                     "end_terminations": 2, "phases": ["A","B","C"]},
+      "acceptance": {"max_uohm_per_joint": 25.0}
+    }
+  ],
+  "manual_signoffs": [
+    {"name": "visual_inspection", "label": "Visual / nameplate verification",
+     "spec_reference": "IEC 61439-6 §10.2"},
+    {"name": "torque_verification", "label": "Tap-off torque @ 35 ft-lb (±5%)",
+     "spec_reference": "Vertiv PowerBar iMPB tap kit instructions",
+     "parameters": {"torque_ftlb": 35.0, "tolerance_pct": 5.0}},
+    {"name": "phase_rotation", "label": "Phase rotation A-B-C verified",
+     "spec_reference": "NETA §7.1"},
+    {"name": "thermal_baseline", "label": "FLIR thermal scan baseline",
+     "spec_reference": "Vertiv energization checklist"}
+  ]
+}

@@ -119,13 +119,14 @@ def _osc(t: float, period: float, amp: float, base: float) -> float:
 
 
 def live_telemetry(devices, runs, now_t: float | None = None,
-                   registry=None) -> FacilityTelemetry:
+                   effective_configs: dict | None = None) -> FacilityTelemetry:
     """Generate one snapshot of live telemetry for the current twin state.
 
-    `registry` is an optional EquipmentRegistry. When supplied, transformer
-    gas readings come from `transformer._gas_levels(spec, today)` so live
-    values agree with the EvidenceStore record's most recent DGA sample
-    (same spec evaluated at the same date)."""
+    `effective_configs` is a {device_id: Config Context} map produced by
+    the equipment loader. When supplied, transformer gas readings are
+    derived through test_executor._gas_levels using the device's
+    Config Context so live tile values agree with the EvidenceStore's
+    most recent DGA sample (same spec evaluated at the same date)."""
     t = now_t if now_t is not None else time.time()
     iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
     snap = FacilityTelemetry(timestamp=iso)
@@ -226,18 +227,18 @@ def live_telemetry(devices, runs, now_t: float | None = None,
             last_trip_at=last_trip_at, sync_check_ok=True,
         )
 
-    # Transformers — gases pulled from the per-XFMR spec evaluated at
-    # `today` so the live tile values agree with the EvidenceStore's
-    # most recent DGA sample for the same transformer.
+    # Transformers — gases pulled from the per-XFMR Config Context evaluated
+    # at `today` so live tile values agree with the EvidenceStore's most
+    # recent DGA sample for the same transformer.
     from datetime import datetime as _dt
-    xfmr_specs = (registry.transformers if registry else {}) or {}
+    cfg_map = effective_configs or {}
     for d in devices:
         if not d.device_id.startswith("xfmr-"):
             continue
-        spec = xfmr_specs.get(d.device_id)
-        if spec is not None:
-            from src.equipment_models.transformer import _gas_levels
-            gases = _gas_levels(spec, _dt.utcnow())
+        cfg = cfg_map.get(d.device_id)
+        if cfg is not None and cfg.get("category") == "transformer":
+            from src.test_executor import _gas_levels
+            gases = _gas_levels(cfg, _dt.utcnow())
             c2h2, h2, ch4 = gases["c2h2"], gases["h2"], gases["ch4"]
         else:
             c2h2 = _osc(t + hash(d.device_id), 51, 0.2, 0.8)

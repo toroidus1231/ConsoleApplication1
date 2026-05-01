@@ -19,19 +19,11 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.server import Deps, create_app, fanout_loop
 from src.attestation import AttestationEngine
-from src.equipment_models.ats import ATSSpec, ats_run_record
-from src.equipment_models.busway import (
-    BuswaySpec, dlro_run_record, hipot_run_record as busway_hipot_record,
-    manual_signoffs as busway_signoffs, megger_run_record,
-)
-from src.equipment_models.cable import CableSpec, hipot_run_record
-from src.equipment_models.generator import GeneratorSpec, generator_run_record
-from src.equipment_models.transformer import TransformerSpec, transformer_run_record
-from src.equipment_models.ups import UPSSpec, ups_run_record
-from src.equipment_registry import EquipmentRegistry
+from src.equipment_loader import load_device_type_configs, merge_instance_overrides
 from src.equipment_views import build_panel as build_equipment_panel
 from src.evidence_store import InMemoryEvidenceStore
 from src.orchestrator import Orchestrator, build_power_graph_from_connections
+from src.test_executor import execute_test, render_manual_signoffs
 from src.test_engine import TestEngine
 from src.types import AttestationRecord, DeviceInfo, Event, PollResult, PunchListItem, TestRequest
 
@@ -434,142 +426,144 @@ def _build_bridge(simulator):
 # ---------------------------------------------------------------------------
 
 
-def _build_equipment_registry(today: datetime) -> EquipmentRegistry:
-    """One source of truth for every equipment spec. Both the EvidenceStore
-    seeds and the live-telemetry generator pull from this registry."""
-    reg = EquipmentRegistry()
-
-    # Cables — feeders behind each MV/LV breaker
-    cable_cfg = {
-        "mv-main-A":  (13.8, 2017, 220.0, 0.045),
-        "mv-main-B":  (13.8, 2017, 220.0, 0.045),
-        "mv-tie":     (13.8, 2017, 220.0, 0.045),
-        "mtz-inc-A1": (0.48, 2021, 380.0, 0.030),
-        "mtz-inc-A2": (0.48, 2021, 380.0, 0.030),
-        "mtz-inc-B1": (0.48, 2021, 380.0, 0.030),
-        "mtz-inc-B2": (0.48, 2021, 380.0, 0.030),
-    }
-    for cable_id, (kv, year, m_ohm, age) in cable_cfg.items():
-        reg.cables[cable_id] = CableSpec(cable_id=cable_id, rated_kv=kv,
-                                         install_year=year,
-                                         initial_megohm=m_ohm,
-                                         aging_per_year=age)
-
-    # Transformers — XFMR-A1 has an emerging arcing fault
-    reg.transformers["xfmr-A1"] = TransformerSpec(
-        xfmr_id="xfmr-A1", install_year=2018,
-        fault_state="active_arcing", fault_severity=1.1,
-        fault_onset=today - timedelta(days=110))
-    for xid in ("xfmr-A2", "xfmr-B1", "xfmr-B2"):
-        reg.transformers[xid] = TransformerSpec(xfmr_id=xid, install_year=2018)
-
-    # Generators
-    reg.generators["gen-1"] = GeneratorSpec(gen_id="gen-1", install_year=2020,
-                                            annual_runtime_hours=85)
-    reg.generators["gen-2"] = GeneratorSpec(gen_id="gen-2", install_year=2020,
-                                            annual_runtime_hours=82)
-
-    # UPSes — stable per-UPS weak cell IDs
-    reg.upses["ups-A"] = UPSSpec(ups_id="ups-A", install_year=2022,
-                                 install_month=4, weak_cell_ids=[17, 142, 199])
-    reg.upses["ups-B"] = UPSSpec(ups_id="ups-B", install_year=2022,
-                                 install_month=4, weak_cell_ids=[34, 88, 211])
-
-    # ATS units cross-reference gen + downstream UPSes
-    for ats_id in ("ats-1", "ats-2"):
-        reg.ats_units[ats_id] = ATSSpec(
-            ats_id=ats_id,
-            upstream_gen=reg.generators["gen-1"],
-            downstream_ups=[reg.upses["ups-A"], reg.upses["ups-B"]])
-
-    # Vertiv busway lineup. Representative sample of what a 500 MW DC
-    # would have — UPS-output feeders (MTG 4000A), row mains (MTG 3200A),
-    # rack branches (PowerBar iMPB 1250A). install_year staggered to
-    # show different ageing states across the panel.
-    reg.busways["mtg-feed-A"] = BuswaySpec(
-        busway_id="mtg-feed-A", rated_amps=4000, voltage_class_v=600,
-        length_m=42.0, manufacturer="Vertiv", model="MTG",
-        install_year=2022, install_month=6,
-        initial_megohm=8_000.0, aging_per_year=0.025,
-        initial_joint_uohm=18.0, joint_acceptance_uohm=30.0,
-        torque_spec_ftlb=60.0, hipot_kv=2.5)
-    reg.busways["mtg-feed-B"] = BuswaySpec(
-        busway_id="mtg-feed-B", rated_amps=4000, voltage_class_v=600,
-        length_m=42.0, manufacturer="Vertiv", model="MTG",
-        install_year=2022, install_month=6,
-        initial_megohm=8_000.0, aging_per_year=0.025,
-        initial_joint_uohm=18.0, joint_acceptance_uohm=30.0,
-        torque_spec_ftlb=60.0, hipot_kv=2.5)
-    reg.busways["mtg-row-A1"] = BuswaySpec(
-        busway_id="mtg-row-A1", rated_amps=3200, voltage_class_v=600,
-        length_m=36.0, manufacturer="Vertiv", model="MTG",
-        install_year=2022, install_month=8,
-        initial_megohm=6_500.0, aging_per_year=0.025,
-        initial_joint_uohm=20.0, joint_acceptance_uohm=30.0,
-        torque_spec_ftlb=60.0, hipot_kv=2.5)
-    reg.busways["mtg-row-A2"] = BuswaySpec(
-        busway_id="mtg-row-A2", rated_amps=3200, voltage_class_v=600,
-        length_m=36.0, manufacturer="Vertiv", model="MTG",
-        install_year=2022, install_month=8,
-        initial_megohm=6_500.0, aging_per_year=0.025,
-        initial_joint_uohm=20.0, joint_acceptance_uohm=30.0,
-        torque_spec_ftlb=60.0, hipot_kv=2.5)
-    reg.busways["impb-rack-A1-01"] = BuswaySpec(
-        busway_id="impb-rack-A1-01", rated_amps=1250, voltage_class_v=600,
-        length_m=24.0, manufacturer="Vertiv", model="PowerBar iMPB",
-        install_year=2023, install_month=2,
-        initial_megohm=4_000.0, aging_per_year=0.020,
-        initial_joint_uohm=22.0, joint_acceptance_uohm=25.0,
-        torque_spec_ftlb=35.0, hipot_kv=2.5)
-    reg.busways["impb-rack-A1-02"] = BuswaySpec(
-        busway_id="impb-rack-A1-02", rated_amps=1250, voltage_class_v=600,
-        length_m=24.0, manufacturer="Vertiv", model="PowerBar iMPB",
-        install_year=2023, install_month=2,
-        initial_megohm=4_000.0, aging_per_year=0.020,
-        initial_joint_uohm=22.0, joint_acceptance_uohm=25.0,
-        torque_spec_ftlb=35.0, hipot_kv=2.5)
-
-    return reg
+# ---------------------------------------------------------------------------
+# Per-device-instance overrides. In production each device has its own
+# Config Context (NetBox local_context). For the demo, this dict carries
+# device-specific deltas (install year, length, fault state, weak cells)
+# on top of the device-type Config Context loaded from
+# config/equipment/<slug>.json.
+# ---------------------------------------------------------------------------
 
 
-def _seed_evidence_store(store, registry: EquipmentRegistry, today: datetime):
-    """Walk the registry and write historical runs into the store. Each
-    series is the same per-device spec evaluated at past run dates so
-    every panel's history is internally consistent."""
-    for cable_id, spec in registry.cables.items():
-        for days_ago in (540, 180, 90, 1):
-            store.put(cable_id, "cable_hipot",
-                      hipot_run_record(spec, today - timedelta(days=days_ago)))
-    for xfmr_id, spec in registry.transformers.items():
-        for days_ago in (180, 90, 30, 0):
-            store.put(xfmr_id, "transformer_commissioning",
-                      transformer_run_record(spec, today - timedelta(days=days_ago)))
-    for gen_id, spec in registry.generators.items():
-        for days_ago in (365, 180, 90, 0):
-            store.put(gen_id, "generator_loadbank",
-                      generator_run_record(spec, today - timedelta(days=days_ago)))
-    for ups_id, spec in registry.upses.items():
-        for days_ago in (180, 90, 30, 1):
-            store.put(ups_id, "ups_battery_transfer",
-                      ups_run_record(spec, today - timedelta(days=days_ago)))
-    for ats_id, spec in registry.ats_units.items():
-        for days_ago in (180, 90, 30, 0):
-            store.put(ats_id, "ats_transfer",
-                      ats_run_record(spec, today - timedelta(days=days_ago)))
-    # Busway: three instrument tests + one manual sign-off bundle per run
-    for busway_id, spec in registry.busways.items():
-        for days_ago in (270, 180, 90, 0):
+def _device_lineup(today: datetime) -> list[dict]:
+    """Return the demo facility's electrical assets keyed by device-type-slug
+    plus per-device overrides. Adding a new product line is a new
+    config/equipment/<slug>.json file plus an entry here saying which
+    devices are of that type."""
+    return [
+        # Cables
+        {"device_id": "mv-main-A",  "device_type_slug": "cable-15kv-xlpe",
+         "overrides": {"install_year": 2017, "initial_megohm": 220.0, "aging_per_year": 0.045}},
+        {"device_id": "mv-main-B",  "device_type_slug": "cable-15kv-xlpe",
+         "overrides": {"install_year": 2017, "initial_megohm": 220.0, "aging_per_year": 0.045}},
+        {"device_id": "mv-tie",     "device_type_slug": "cable-15kv-xlpe",
+         "overrides": {"install_year": 2017, "initial_megohm": 220.0, "aging_per_year": 0.045}},
+        {"device_id": "mtz-inc-A1", "device_type_slug": "cable-600v-xlpe",
+         "overrides": {"install_year": 2021, "initial_megohm": 380.0, "aging_per_year": 0.030}},
+        {"device_id": "mtz-inc-A2", "device_type_slug": "cable-600v-xlpe",
+         "overrides": {"install_year": 2021, "initial_megohm": 380.0, "aging_per_year": 0.030}},
+        {"device_id": "mtz-inc-B1", "device_type_slug": "cable-600v-xlpe",
+         "overrides": {"install_year": 2021, "initial_megohm": 380.0, "aging_per_year": 0.030}},
+        {"device_id": "mtz-inc-B2", "device_type_slug": "cable-600v-xlpe",
+         "overrides": {"install_year": 2021, "initial_megohm": 380.0, "aging_per_year": 0.030}},
+        # Transformers — XFMR-A1 has an emerging arcing fault
+        {"device_id": "xfmr-A1", "device_type_slug": "oil-xfmr-2500kva",
+         "overrides": {"install_year": 2018, "fault_state": "active_arcing",
+                       "fault_severity": 1.1,
+                       "fault_onset": (today - timedelta(days=110)).isoformat()}},
+        {"device_id": "xfmr-A2", "device_type_slug": "oil-xfmr-2500kva",
+         "overrides": {"install_year": 2018}},
+        {"device_id": "xfmr-B1", "device_type_slug": "oil-xfmr-2500kva",
+         "overrides": {"install_year": 2018}},
+        {"device_id": "xfmr-B2", "device_type_slug": "oil-xfmr-2500kva",
+         "overrides": {"install_year": 2018}},
+        # Generators
+        {"device_id": "gen-1", "device_type_slug": "cat-3516b",
+         "overrides": {"install_year": 2020, "annual_runtime_hours_default": 85}},
+        {"device_id": "gen-2", "device_type_slug": "cat-3516b",
+         "overrides": {"install_year": 2020, "annual_runtime_hours_default": 82}},
+        # UPSes
+        {"device_id": "ups-A", "device_type_slug": "apc-symmetra-mw",
+         "overrides": {"install_year": 2022, "install_month": 4,
+                       "weak_cell_ids": [17, 142, 199]}},
+        {"device_id": "ups-B", "device_type_slug": "apc-symmetra-mw",
+         "overrides": {"install_year": 2022, "install_month": 4,
+                       "weak_cell_ids": [34, 88, 211]}},
+        # ATS
+        {"device_id": "ats-1", "device_type_slug": "asco-7000",
+         "overrides": {}, "cross_refs": {"upstream_gen": "gen-1",
+                                          "downstream_ups": ["ups-A", "ups-B"]}},
+        {"device_id": "ats-2", "device_type_slug": "asco-7000",
+         "overrides": {}, "cross_refs": {"upstream_gen": "gen-1",
+                                          "downstream_ups": ["ups-A", "ups-B"]}},
+        # Vertiv busway lineup (representative sample for a 500 MW DC)
+        {"device_id": "mtg-feed-A", "device_type_slug": "vertiv-mtg-4000a",
+         "overrides": {"install_year": 2022, "install_month": 6, "length_m": 42.0,
+                       "initial_megohm": 8_000.0, "aging_per_year": 0.025,
+                       "initial_joint_uohm": 18.0, "joint_aging_per_year": 0.015}},
+        {"device_id": "mtg-feed-B", "device_type_slug": "vertiv-mtg-4000a",
+         "overrides": {"install_year": 2022, "install_month": 6, "length_m": 42.0,
+                       "initial_megohm": 8_000.0, "aging_per_year": 0.025,
+                       "initial_joint_uohm": 18.0, "joint_aging_per_year": 0.015}},
+        {"device_id": "mtg-row-A1", "device_type_slug": "vertiv-mtg-3200a",
+         "overrides": {"install_year": 2022, "install_month": 8, "length_m": 36.0,
+                       "initial_megohm": 6_500.0, "aging_per_year": 0.025,
+                       "initial_joint_uohm": 20.0, "joint_aging_per_year": 0.015}},
+        {"device_id": "mtg-row-A2", "device_type_slug": "vertiv-mtg-3200a",
+         "overrides": {"install_year": 2022, "install_month": 8, "length_m": 36.0,
+                       "initial_megohm": 6_500.0, "aging_per_year": 0.025,
+                       "initial_joint_uohm": 20.0, "joint_aging_per_year": 0.015}},
+        {"device_id": "impb-rack-A1-01", "device_type_slug": "vertiv-impb-1250a",
+         "overrides": {"install_year": 2023, "install_month": 2, "length_m": 24.0,
+                       "initial_megohm": 4_000.0, "aging_per_year": 0.020,
+                       "initial_joint_uohm": 22.0, "joint_aging_per_year": 0.012}},
+        {"device_id": "impb-rack-A1-02", "device_type_slug": "vertiv-impb-1250a",
+         "overrides": {"install_year": 2023, "install_month": 2, "length_m": 24.0,
+                       "initial_megohm": 4_000.0, "aging_per_year": 0.020,
+                       "initial_joint_uohm": 22.0, "joint_aging_per_year": 0.012}},
+    ]
+
+
+def _resolve_effective_configs(today: datetime) -> dict[str, dict]:
+    """Load device-type configs from disk + apply per-device overrides.
+    Returns {device_id: effective Config Context}."""
+    type_configs = load_device_type_configs(Path(__file__).parent / "config")
+    out: dict[str, dict] = {}
+    for entry in _device_lineup(today):
+        slug = entry["device_type_slug"]
+        type_cfg = type_configs.get(slug)
+        if type_cfg is None:
+            continue  # device-type slug not yet covered by a config file
+        eff = merge_instance_overrides(type_cfg, entry["overrides"])
+        eff["device_id"] = entry["device_id"]
+        eff["cross_refs"] = entry.get("cross_refs", {})
+        out[entry["device_id"]] = eff
+    return out
+
+
+def _seed_evidence_store(store, effective_configs: dict[str, dict], today: datetime):
+    """Walk effective configs, run every active_test in each Config Context
+    at four historical run dates, write to the store. Same path the real
+    test engine would use in production — just driven by spec instead of
+    by an instrument."""
+    history_offsets = (270, 180, 90, 0)
+    for device_id, cfg in effective_configs.items():
+        category = cfg.get("category")
+        cross_refs_ids = cfg.get("cross_refs", {})
+        for days_ago in history_offsets:
             run_at = today - timedelta(days=days_ago)
-            store.put(busway_id, "busway_megger", megger_run_record(spec, run_at))
-            store.put(busway_id, "busway_hipot", busway_hipot_record(spec, run_at))
-            store.put(busway_id, "busway_dlro", dlro_run_record(spec, run_at))
-            store.put(busway_id, "busway_manual", {
-                "device_id": busway_id,
-                "test_type": "busway_manual_signoffs",
-                "signoffs": busway_signoffs(spec, run_at),
-                "completed_at": run_at.isoformat(),
-                "passed": True,
-            })
+            cross = {}
+            if cross_refs_ids.get("upstream_gen"):
+                cross["upstream_gen"] = effective_configs.get(cross_refs_ids["upstream_gen"])
+            if cross_refs_ids.get("downstream_ups"):
+                cross["downstream_ups"] = [
+                    effective_configs[u] for u in cross_refs_ids["downstream_ups"]
+                    if u in effective_configs
+                ]
+            for test_def in cfg.get("active_tests", []) or []:
+                rec = execute_test(device_id=device_id, config=cfg,
+                                   test_def=test_def, run_date=run_at,
+                                   cross_refs=cross)
+                store.put(device_id, test_def["name"], rec)
+            # Manual sign-offs (busway category for now)
+            if cfg.get("manual_signoffs"):
+                store.put(device_id, "busway_manual", {
+                    "device_id": device_id,
+                    "test_type": "busway_manual_signoffs",
+                    "signoffs": render_manual_signoffs(cfg, run_at),
+                    "completed_at": run_at.isoformat(),
+                    "passed": True,
+                })
 
 
 def _equipment_provider(evidence_store):
@@ -604,14 +598,15 @@ async def main():
     devices, runs = build_facility()
     graph = power_graph(devices)
 
-    # Equipment registry: per-device specs driving every panel.
-    # Live telemetry and the EvidenceStore both read from the same
-    # registry so today's reading on a tile == today's DGA-history
-    # tail value == today's run record, by construction.
+    # Load device-type Config Contexts from config/equipment/*.json,
+    # apply per-device-instance overrides, then seed the EvidenceStore
+    # by running every active_test through the generic executor at four
+    # historical dates. Both live telemetry and the panel endpoint read
+    # back through this same path.
     today = datetime(2026, 5, 1)
-    registry = _build_equipment_registry(today)
+    effective_configs = _resolve_effective_configs(today)
     evidence_store = InMemoryEvidenceStore()
-    _seed_evidence_store(evidence_store, registry, today)
+    _seed_evidence_store(evidence_store, effective_configs, today)
 
     attest = AttestationEngine(
         facility_name=config.facility_name,
@@ -707,7 +702,7 @@ async def main():
             }
         },
         telemetry_provider=lambda: telemetry_to_dict(
-            live_telemetry(devices, runs, registry=registry)),
+            live_telemetry(devices, runs, effective_configs=effective_configs)),
         equipment_provider=_equipment_provider(evidence_store),
     )
     app = create_app(deps)

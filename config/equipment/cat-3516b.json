@@ -1,0 +1,62 @@
+{
+  "device_type_slug": "cat-3516b",
+  "manufacturer": "Caterpillar",
+  "model": "3516B 1500 kW standby",
+  "category": "generator",
+  "ratings": {
+    "rated_kw": 1500,
+    "voltage_v": 480.0,
+    "nominal_freq_hz": 60.0,
+    "nominal_rpm": 1800
+  },
+  "ageing_model": {
+    "kind": "generator_runtime",
+    "params": {
+      "annual_runtime_hours_default": 85,
+      "operating_hours_at_install_default": 0
+    }
+  },
+  "active_tests": [
+    {
+      "name": "generator_load_bank",
+      "type": "generator_loadbank",
+      "spec_reference": "NFPA 110 §8.4.2 / NETA §7.22 4-hour graduated load bank",
+      "instrument": {
+        "vendor": "Avtron", "model": "K875A",
+        "serial": "SN-AV-K875A-7711",
+        "cal_cert": "sha256:avtron-k875a-2026-q1"
+      },
+      "parameters": {
+        "steps": [0.25, 0.50, 0.75, 1.00],
+        "step_duration_minutes": 60
+      },
+      "acceptance": {
+        "min_voltage_v": 470.0,
+        "max_voltage_v": 490.0,
+        "min_freq_hz": 59.5,
+        "max_freq_hz": 60.5,
+        "min_kw_at_full": 1450
+      }
+    },
+    {
+      "name": "generator_paralleling",
+      "type": "generator_loadbank",
+      "spec_reference": "IEEE 446 §6 / NFPA 110 Type 10 black-start",
+      "instrument": {
+        "vendor": "Avtron", "model": "K875A",
+        "serial": "SN-AV-K875A-7711",
+        "cal_cert": "sha256:avtron-k875a-2026-q1"
+      },
+      "parameters": {
+        "steps": [0.25, 0.50, 0.75, 1.00],
+        "step_duration_minutes": 60,
+        "include_blackstart_sequence": true
+      },
+      "acceptance": {
+        "max_ready_signal_seconds": 15.0,
+        "max_ramp_seconds": 12.0
+      }
+    }
+  ],
+  "manual_signoffs": []
+}

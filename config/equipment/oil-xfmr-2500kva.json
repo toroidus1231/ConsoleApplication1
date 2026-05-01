@@ -1,0 +1,86 @@
+{
+  "device_type_slug": "oil-xfmr-2500kva",
+  "manufacturer": "Generic",
+  "model": "Oil-filled MV/LV transformer 2500 kVA",
+  "category": "transformer",
+  "ratings": {
+    "rated_kva": 2500,
+    "primary_kv": 13.8,
+    "secondary_v": 480.0,
+    "vector_group": "Dyn1"
+  },
+  "ageing_model": {
+    "kind": "transformer_oil_paper",
+    "params": {
+      "initial_pi_megohm": 1100.0,
+      "ttr_tolerance_pct": 0.5
+    }
+  },
+  "active_tests": [
+    {
+      "name": "transformer_turns_ratio",
+      "type": "transformer_turns_ratio",
+      "spec_reference": "IEEE C57.12.90 §8.4 (≤ 0.5% deviation)",
+      "instrument": {
+        "vendor": "Megger", "model": "TTR330",
+        "serial": "SN-TTR-9921",
+        "cal_cert": "sha256:megger-ttr330-2026-q1"
+      },
+      "parameters": {
+        "taps": [-2, -1, 0, 1, 2],
+        "phases": ["A", "B", "C"]
+      },
+      "acceptance": {"max_deviation_pct": 0.5}
+    },
+    {
+      "name": "polarization_index",
+      "type": "polarization_index",
+      "spec_reference": "IEEE 43-2013 (PI ≥ 2.0 for class A)",
+      "instrument": {
+        "vendor": "Megger", "model": "MIT525",
+        "serial": "SN-MIT-78421",
+        "cal_cert": "sha256:megger-mit525-2026-q1"
+      },
+      "parameters": {
+        "test_voltage_v": 5000,
+        "duration_minutes": 10
+      },
+      "acceptance": {"min_pi": 2.0}
+    },
+    {
+      "name": "dga_initial_sample",
+      "type": "dissolved_gas_analysis",
+      "spec_reference": "IEEE C57.104-2008 / IEC 60599 (Duval)",
+      "instrument": {
+        "vendor": "Qualitrol", "model": "118ITM",
+        "serial": "SN-QTL-118-001",
+        "cal_cert": "sha256:qualitrol-118-2026-q1"
+      },
+      "parameters": {
+        "gases": ["h2", "ch4", "c2h6", "c2h4", "c2h2", "co", "co2"],
+        "history_weeks": 14
+      },
+      "acceptance": {
+        "max_c2h2_ppm": 1.0,
+        "max_h2_ppm": 100.0,
+        "max_ch4_ppm": 120.0
+      }
+    },
+    {
+      "name": "transformer_hipot",
+      "type": "transformer_hipot_history",
+      "spec_reference": "IEEE C57.12.90 §10 / NETA §7.2",
+      "instrument": {
+        "vendor": "Vitrek", "model": "95X",
+        "serial": "SN-VTK-95X-12345",
+        "cal_cert": "sha256:vitrek-95x-2026-q2"
+      },
+      "parameters": {
+        "test_factor": 0.8,
+        "duration_seconds": 60
+      },
+      "acceptance": {"max_leakage_ma": 0.5}
+    }
+  ],
+  "manual_signoffs": []
+}
