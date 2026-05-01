@@ -67,6 +67,10 @@ class Deps:
     # Map device_id → effective Config Context (post-override). Used by
     # GET /api/v1/devices/{id}/active_tests to populate Launch Test UI.
     _effective_configs_for_devices: dict[str, dict] | None = None
+    # Hot-plug instrument detector. When set, /api/v1/instruments/connected
+    # returns the live list of physical instruments the platform has
+    # detected on USB / Modbus TCP / Bluetooth.
+    instrument_detector: Any = None
     # SSE fan-out — registered listeners get every event.
     _sse_subscribers: set[asyncio.Queue[Event]] = field(default_factory=set)
 
@@ -253,6 +257,29 @@ def create_app(deps: Deps) -> FastAPI:
     @app.get("/api/v1/power-graph", dependencies=[Depends(auth)])
     async def power_graph_endpoint():
         return deps.facility_power_graph
+
+    @app.get("/api/v1/instruments/connected", dependencies=[Depends(auth)])
+    async def instruments_connected():
+        """Live list of detected/connected physical instruments. The
+        operator UI banner reads this so the user sees what's plugged
+        in without having to install anything. Each entry: vendor,
+        model, serial, transport, address, cal cert + expiry, state."""
+        if deps.instrument_detector is None:
+            return {"connected": [], "detector_running": False}
+        return {
+            "detector_running": True,
+            "connected": [
+                {
+                    "vendor": i.vendor, "model": i.model, "serial": i.serial,
+                    "transport": i.transport, "address": i.address,
+                    "cal_cert_id": i.cal_cert_id,
+                    "cal_expires_at": i.cal_expires_at,
+                    "state": i.state,
+                    "last_seen_ts": i.last_seen_ts,
+                }
+                for i in deps.instrument_detector.connected
+            ],
+        }
 
     @app.get("/api/v1/sld/layout", dependencies=[Depends(auth)])
     async def sld_layout():

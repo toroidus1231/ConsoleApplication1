@@ -135,6 +135,7 @@ function TopBar() {
           </React.Fragment>
         ))}
       </div>
+      <ConnectedInstruments />
       <div className="cmd-search">
         <Search size={11} />
         <span style={{ flex: 1 }}>Search devices, tests, attestations…</span>
@@ -226,6 +227,42 @@ function StatusBar() {
     </footer>
   );
 }
+
+function ConnectedInstruments() {
+  // Live banner of physical instruments the platform has hot-plug detected.
+  // Operators see what's plugged in without ever installing a driver.
+  const [list, setList] = useState([]);
+  useEffect(() => {
+    const fetch = () => api.get("/instruments/connected")
+      .then((r) => setList(r.connected || []))
+      .catch(() => setList([]));
+    fetch();
+    const t = setInterval(fetch, 5000);
+    return () => clearInterval(t);
+  }, []);
+  if (list.length === 0) return null;
+  return (
+    <div title={list.map(i => `${i.vendor} ${i.model} · ${i.serial} · ${i.transport} ${i.address} · cal until ${i.cal_expires_at}`).join("\n")}
+         style={{
+           display: "inline-flex", alignItems: "center", gap: 6,
+           fontSize: 11, color: "var(--text-tertiary)",
+           padding: "2px 10px",
+           border: "1px solid var(--border-default)",
+           borderRadius: "var(--radius-sm)",
+           fontFamily: "var(--font-mono)",
+         }}>
+      <span style={{
+        display: "inline-block", width: 6, height: 6, borderRadius: "50%",
+        background: "var(--pass)",
+      }} />
+      <span>{list.length} instrument{list.length > 1 ? "s" : ""} live</span>
+      <span style={{ color: "var(--text-faint)" }}>
+        ({list.map(i => `${i.vendor} ${i.model}`).join(", ")})
+      </span>
+    </div>
+  );
+}
+
 
 function ApiKeyPrompt({ onSet }) {
   const [v, setV] = useState("");

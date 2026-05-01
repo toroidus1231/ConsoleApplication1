@@ -680,6 +680,82 @@ def _seed_evidence_store(store, effective_configs: dict[str, dict], today: datet
                 })
 
 
+def _build_demo_instrument_detector():
+    """Demo detector: scripts a few candidates and a fake identity probe
+    so the connected-instruments banner is populated without real
+    hardware. Production swaps the scanners for USBSerialScanner /
+    ModbusTcpScanner / BLEScanner against real /dev + network."""
+    from src.instruments.detector import (
+        DetectedInstrument, InstrumentDetector,
+    )
+    from src.instruments import _eager_register, get_driver, CalibrationCert
+
+    _eager_register()
+
+    class _ScriptedScanner:
+        def __init__(self, items):
+            self._items = items
+            self._emitted = False
+
+        async def scan(self):
+            if self._emitted:
+                return []
+            self._emitted = True
+            return list(self._items)
+
+    scanner = _ScriptedScanner([
+        ("serial",     "/dev/ttyACM0"),
+        ("serial",     "/dev/ttyACM1"),
+        ("modbus_tcp", "10.4.0.50:502"),
+        ("modbus_tcp", "10.4.0.110:502"),
+    ])
+
+    # Map candidate address → (vendor, model, serial) for the demo
+    DEMO_IDENTITIES = {
+        "/dev/ttyACM0":     ("Megger", "MIT525", "SN-MIT-78421"),
+        "/dev/ttyACM1":     ("Vitrek", "95X",    "SN-VTK-95X-12345"),
+        "10.4.0.50:502":    ("Qualitrol", "118ITM", "Q118-001"),
+        "10.4.0.110:502":   ("SEL", "SEL-751", "SEL751-A8472301"),
+    }
+
+    async def fake_identity(address):
+        return DEMO_IDENTITIES.get(address)
+
+    class _DemoDriver:
+        def __init__(self, vendor, model, serial):
+            self.VENDOR = vendor
+            self.MODEL = model
+            self._serial = serial
+            self.connected = False
+        async def connect(self): self.connected = True
+        async def disconnect(self): self.connected = False
+        async def execute(self, command): return {}
+        async def verify_calibration(self):
+            return CalibrationCert(
+                instrument_serial=self._serial,
+                cert_id=f"{self.VENDOR}-CAL-2026-Q1",
+                cert_hash=f"sha256:{self.VENDOR.lower()}-{self.MODEL.lower()}-2026-q1",
+                issued_at="2026-01-15T00:00:00",
+                expires_at="2026-12-31T00:00:00",
+                issuer=f"{self.VENDOR} factory cal lab (NIST-traceable)",
+                standards_traceability=["NIST"],
+            )
+
+    detector = InstrumentDetector(
+        [scanner],
+        identity_probes={"serial": fake_identity, "modbus_tcp": fake_identity},
+    )
+
+    # Override the construct_and_connect to skip real channel I/O
+    async def _fake_construct(self, driver_cls, transport, address):
+        ident = DEMO_IDENTITIES[address]
+        d = _DemoDriver(*ident)
+        await d.connect()
+        return d
+    detector._construct_and_connect = _fake_construct.__get__(detector, type(detector))
+    return detector
+
+
 def _equipment_provider(evidence_store):
     """Legacy URL-kind dispatch (kept for back-compat)."""
     def provider(kind: str, device_id: str) -> dict:
@@ -725,6 +801,13 @@ async def main():
     effective_configs = _resolve_effective_configs(today)
     evidence_store = InMemoryEvidenceStore()
     _seed_evidence_store(evidence_store, effective_configs, today)
+
+    # Hot-plug instrument detector. Production scans /dev/tty*, BLE,
+    # and the configured commissioning subnet. For the demo we wire
+    # scripted candidates that pretend a Megger MIT525 + Vitrek 95X +
+    # SEL-751 are plugged in, so the operator banner is populated.
+    instrument_detector = _build_demo_instrument_detector()
+    await instrument_detector.scan_once()
 
     attest = AttestationEngine(
         facility_name=config.facility_name,
@@ -821,6 +904,7 @@ async def main():
         equipment_by_id_provider=lambda device_id: _equipment_by_id(
             device_id, evidence_store, effective_configs),
         _effective_configs_for_devices=effective_configs,
+        instrument_detector=instrument_detector,
     )
     app = create_app(deps)
 
