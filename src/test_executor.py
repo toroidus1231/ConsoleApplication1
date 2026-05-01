@@ -689,6 +689,124 @@ def _ats_transfer_sequence(device_id, config, test_def, run_date, cross):
 
 
 # ---------------------------------------------------------------------------
+# Test type: sel_secondary_injection / sel_primary_injection
+#
+# Drives a relay test set (e.g., Doble F6150) to inject current at the
+# relay's CT secondary side. Verifies pickup ±5% of setting (IEEE
+# C37.233 §6.3.1) and timing across a sweep of multiples on the
+# coordination-study TCC curve (IEEE C37.112-2018 §5).
+#
+# `secondary` injects post-CT (typical 5 A scale) — exercises just the
+# relay logic. `primary` injects pre-CT (high-current loop), exercising
+# the full CT + relay chain. Same control flow, just different physics
+# parameters in the Config Context.
+# ---------------------------------------------------------------------------
+
+
+from src.instruments.doble_f6150 import ieee_c37_112_curve_seconds
+
+
+def _relay_pickup_actual(setpoint_a: float, age_years: float,
+                          rng: random.Random) -> float:
+    """Model the actual pickup value of a relay element after `age_years`
+    of in-service life. Drift is small for solid-state relays — well
+    inside the IEEE C37.233 ±5% tolerance for any reasonable age.
+    """
+    drift_pct = 0.7 * age_years + rng.uniform(-0.4, 0.4)
+    return setpoint_a * (1.0 + drift_pct / 100.0)
+
+
+def _relay_trip_actual(expected_s: float, rng: random.Random) -> float:
+    """Per-shot timing variance — protective relays target ±3% one-sigma
+    repeatability per IEEE C37.90-2005 §6.4. We model per-injection jitter
+    plus a small calibration offset, both well inside the C37.233 ±5%.
+    """
+    jitter = rng.uniform(-0.018, 0.018)
+    return expected_s * (1.0 + jitter)
+
+
+def _relay_injection_handler(injection_kind: str):
+    def _handler(device_id, config, test_def, run_date, cross):
+        params = test_def["parameters"]
+        accept = test_def.get("acceptance", {})
+        elements_cfg = config["ratings"].get("relay_elements", [])
+        elements_cfg = {e["code"]: e for e in elements_cfg}
+        rng = _seed(device_id, run_date,
+                    0x53493 if injection_kind == "secondary" else 0x504A)
+        age = _age_years(config, run_date)
+
+        results = []
+        for element in params["elements"]:
+            code = element["code"]
+            curve_kind = element.get("curve_kind", "ieee_very_inverse")
+            td = float(element.get("td", 1.0))
+            multiples = element.get("multiples", [2.0, 5.0, 10.0])
+            cfg_setpoint = elements_cfg.get(code, {}).get("pickup_a")
+            setpoint = float(element.get("pickup_a", cfg_setpoint or 1.0))
+            tol_pct = float(accept.get("pickup_tolerance_pct", 5.0))
+            time_tol_pct = float(accept.get("timing_tolerance_pct", 5.0))
+            min_time_tol_ms = int(accept.get("min_timing_tolerance_ms", 50))
+
+            actual_pickup = _relay_pickup_actual(setpoint, age, rng)
+            pickup_dev = (actual_pickup - setpoint) / setpoint * 100.0
+            pickup_passed = abs(pickup_dev) <= tol_pct
+
+            tcc_points = []
+            for m in multiples:
+                expected_s = ieee_c37_112_curve_seconds(curve_kind, td, float(m))
+                actual_s = _relay_trip_actual(expected_s, rng)
+                dev = (actual_s - expected_s) / expected_s * 100.0
+                tol_abs = max(time_tol_pct / 100.0 * expected_s,
+                              min_time_tol_ms / 1000.0)
+                point_passed = abs(actual_s - expected_s) <= tol_abs
+                tcc_points.append({
+                    "multiple": float(m),
+                    "current_a": round(setpoint * float(m), 3),
+                    "expected_s": round(expected_s, 4),
+                    "actual_s": round(actual_s, 4),
+                    "deviation_pct": round(dev, 3),
+                    "passed": point_passed,
+                })
+            timing_passed = all(p["passed"] for p in tcc_points)
+
+            results.append({
+                "code": code,
+                "function": element.get("function", code),
+                "curve_kind": curve_kind,
+                "td": td,
+                "setpoint_a": round(setpoint, 3),
+                "actual_pickup_a": round(actual_pickup, 3),
+                "pickup_deviation_pct": round(pickup_dev, 3),
+                "pickup_passed": pickup_passed,
+                "tcc_points": tcc_points,
+                "timing_passed": timing_passed,
+                "passed": pickup_passed and timing_passed,
+            })
+
+        all_passed = all(r["passed"] for r in results)
+        return {
+            "device_id": device_id,
+            "test_name": test_def["name"],
+            "test_type": f"sel_{injection_kind}_injection",
+            "spec_reference": test_def.get("spec_reference",
+                                            "NETA ATS-17 §7.10 / IEEE C37.233 §6.3"),
+            "manufacturer": config.get("manufacturer"),
+            "model": config.get("model"),
+            "injection_kind": injection_kind,
+            "elements_tested": [r["code"] for r in results],
+            "results": results,
+            "passed": all_passed,
+            "instrument": _instrument_block(test_def),
+            "completed_at": run_date.isoformat(),
+        }
+    return _handler
+
+
+_sel_secondary_injection = _relay_injection_handler("secondary")
+_sel_primary_injection = _relay_injection_handler("primary")
+
+
+# ---------------------------------------------------------------------------
 # Manual sign-off renderer
 # ---------------------------------------------------------------------------
 
@@ -721,6 +839,8 @@ _DISPATCH = {
     "ups_battery_transfer": _ups_battery_transfer,
     "generator_loadbank": _generator_loadbank,
     "ats_transfer_sequence": _ats_transfer_sequence,
+    "sel_secondary_injection": _sel_secondary_injection,
+    "sel_primary_injection": _sel_primary_injection,
 }
 
 

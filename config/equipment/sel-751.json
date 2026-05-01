@@ -1,0 +1,120 @@
+{
+  "device_type_slug": "sel-751",
+  "manufacturer": "SEL",
+  "model": "SEL-751",
+  "category": "relay",
+  "ratings": {
+    "voltage_class_v": 480,
+    "ct_ratio": "1200:5",
+    "vt_ratio": "115:1",
+    "relay_elements": [
+      {"code": "27",  "function": "Undervoltage",       "pickup_a": null,  "pickup_v": 11730.0},
+      {"code": "50",  "function": "Phase IOC",          "pickup_a": 800.0},
+      {"code": "51",  "function": "Phase TOC",          "pickup_a": 480.0,
+        "curve_kind": "ieee_very_inverse",         "td": 2.5},
+      {"code": "81",  "function": "Frequency",          "pickup_a": null,
+        "pickup_hz_low": 59.5, "pickup_hz_high": 60.5},
+      {"code": "50N", "function": "Ground IOC",         "pickup_a": 80.0},
+      {"code": "51N", "function": "Ground TOC",         "pickup_a": 50.0,
+        "curve_kind": "ieee_moderately_inverse",   "td": 1.5}
+    ]
+  },
+  "ageing_model": {
+    "kind": "solid_state_relay",
+    "params": {
+      "install_year": 2022,
+      "install_month": 4
+    }
+  },
+  "active_tests": [
+    {
+      "name": "sel_secondary_injection",
+      "type": "sel_secondary_injection",
+      "spec_reference": "NETA ATS-17 §7.10 / IEEE C37.233 §6.3 (functional element test)",
+      "instrument": {"vendor": "Doble", "model": "F6150e",
+                     "serial": "SN-DBL-F6150-22441",
+                     "cal_cert": "sha256:doble-f6150e-2026-q1"},
+      "parameters": {
+        "elements": [
+          {"code": "51",  "pickup_a": 5.0,
+           "curve_kind": "ieee_very_inverse",         "td": 2.5,
+           "multiples": [2.0, 5.0, 10.0]},
+          {"code": "50",  "pickup_a": 8.0,
+           "curve_kind": "ieee_extremely_inverse",    "td": 1.0,
+           "multiples": [1.5, 2.0]},
+          {"code": "51N", "pickup_a": 1.0,
+           "curve_kind": "ieee_moderately_inverse",   "td": 1.5,
+           "multiples": [2.0, 5.0]}
+        ]
+      },
+      "acceptance": {
+        "pickup_tolerance_pct": 5.0,
+        "timing_tolerance_pct": 5.0,
+        "min_timing_tolerance_ms": 50
+      }
+    },
+    {
+      "name": "sel_primary_injection",
+      "type": "sel_primary_injection",
+      "spec_reference": "NETA ATS-17 §7.10.3 (CT + relay end-to-end)",
+      "instrument": {"vendor": "Doble", "model": "F6150e",
+                     "serial": "SN-DBL-F6150-22441",
+                     "cal_cert": "sha256:doble-f6150e-2026-q1"},
+      "parameters": {
+        "elements": [
+          {"code": "51",  "pickup_a": 1200.0,
+           "curve_kind": "ieee_very_inverse",         "td": 2.5,
+           "multiples": [2.0, 5.0]},
+          {"code": "50",  "pickup_a": 1920.0,
+           "curve_kind": "ieee_extremely_inverse",    "td": 1.0,
+           "multiples": [1.5, 2.0]}
+        ]
+      },
+      "acceptance": {
+        "pickup_tolerance_pct": 5.0,
+        "timing_tolerance_pct": 5.0,
+        "min_timing_tolerance_ms": 50
+      }
+    }
+  ],
+  "manual_signoffs": [
+    {"name": "trip_circuit_continuity",
+     "label": "Trip circuit continuity (DC supervision verified)",
+     "spec_reference": "NETA ATS-17 §7.10.1.1"},
+    {"name": "ct_polarity",
+     "label": "CT polarity verified by primary current injection",
+     "spec_reference": "IEEE C57.13.1 §8.2"},
+    {"name": "settings_signoff",
+     "label": "Settings file matches stamped coordination study",
+     "spec_reference": "IEEE C37.230 §6"}
+  ],
+  "panel": {
+    "header": {
+      "title_template": "SEL-751 · {device_id}",
+      "crumb_template": "{manufacturer} {model} · NETA ATS-17 §7.10 acceptance",
+      "status_field": "passed",
+      "status_labels": {"true": "PASSED", "false": "DEFICIENCY"}
+    },
+    "tiles": [
+      {"label": "Manufacturer", "value_field": "manufacturer"},
+      {"label": "Model", "value_field": "model"},
+      {"label": "Injection kind", "value_field": "injection_kind"},
+      {"label": "Elements tested", "value_field": "elements_tested.length",
+        "format": "{} elements"}
+    ],
+    "cards": [
+      {"kind": "table",
+       "title": "Element pickup (IEEE C37.233 §6.3.1, ±5%)",
+       "data_path": "results",
+       "columns": [
+         {"label": "Code", "field": "code", "mono": true},
+         {"label": "Function", "field": "function"},
+         {"label": "Setpoint", "field": "setpoint_a", "format": "{:.3f} A", "mono": true},
+         {"label": "Actual",   "field": "actual_pickup_a", "format": "{:.3f} A", "mono": true},
+         {"label": "Deviation", "field": "pickup_deviation_pct", "format": "{:.2f} %", "mono": true},
+         {"label": "Status", "kind": "badge", "field": "pickup_passed",
+          "labels": {"true": "passed", "false": "failed"}}
+       ]}
+    ]
+  }
+}

@@ -494,6 +494,128 @@ def test_ats_transfer_pulls_gen_build_time_from_cross_ref():
 
 
 # ---------------------------------------------------------------------------
+# sel_secondary_injection / sel_primary_injection
+# ---------------------------------------------------------------------------
+
+
+def _sel_relay_config():
+    return {
+        "category": "relay",
+        "manufacturer": "SEL",
+        "model": "SEL-751",
+        "ageing_model": {"params": {"install_year": 2022, "install_month": 1}},
+        "ratings": {
+            "voltage_class_v": 480,
+            "relay_elements": [
+                {"code": "51",  "function": "Phase TOC",  "pickup_a": 5.0},
+                {"code": "50",  "function": "Phase IOC",  "pickup_a": 25.0},
+                {"code": "51N", "function": "Ground TOC", "pickup_a": 1.0},
+            ],
+        },
+    }
+
+
+def _sel_test_def(test_type: str):
+    return {
+        "name": f"sel_{test_type}_injection",
+        "type": f"sel_{test_type}_injection",
+        "spec_reference": "NETA ATS-17 §7.10",
+        "instrument": {"vendor": "Doble", "model": "F6150e"},
+        "parameters": {
+            "elements": [
+                {"code": "51",  "curve_kind": "ieee_very_inverse",
+                 "td": 2.5, "multiples": [2.0, 5.0, 10.0]},
+                {"code": "50",  "curve_kind": "ieee_extremely_inverse",
+                 "td": 1.0, "multiples": [1.5, 2.0]},
+                {"code": "51N", "curve_kind": "ieee_moderately_inverse",
+                 "td": 1.5, "multiples": [2.0, 5.0]},
+            ],
+        },
+        "acceptance": {
+            "pickup_tolerance_pct": 5.0,
+            "timing_tolerance_pct": 5.0,
+            "min_timing_tolerance_ms": 50,
+        },
+    }
+
+
+def test_sel_secondary_injection_shape():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_relay_config(),
+                       test_def=_sel_test_def("secondary"),
+                       run_date=_today())
+    assert rec["test_type"] == "sel_secondary_injection"
+    assert rec["injection_kind"] == "secondary"
+    assert rec["spec_reference"] == "NETA ATS-17 §7.10"
+    assert rec["elements_tested"] == ["51", "50", "51N"]
+    assert len(rec["results"]) == 3
+    for elem_result in rec["results"]:
+        assert elem_result["pickup_passed"] is True
+        assert elem_result["timing_passed"] is True
+        assert elem_result["passed"] is True
+        assert all(p["expected_s"] > 0 for p in elem_result["tcc_points"])
+        assert all("actual_s" in p for p in elem_result["tcc_points"])
+        assert all("deviation_pct" in p for p in elem_result["tcc_points"])
+    assert rec["passed"] is True
+
+
+def test_sel_primary_injection_uses_primary_kind():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_relay_config(),
+                       test_def=_sel_test_def("primary"),
+                       run_date=_today())
+    assert rec["test_type"] == "sel_primary_injection"
+    assert rec["injection_kind"] == "primary"
+
+
+def test_sel_injection_pickup_uses_config_setpoint_when_unspecified():
+    cfg = _sel_relay_config()
+    test_def = _sel_test_def("secondary")
+    # Drop pickup_a from one element; handler should fall back to ratings
+    test_def["parameters"]["elements"][0].pop("pickup_a", None)
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=cfg, test_def=test_def, run_date=_today())
+    elem51 = next(r for r in rec["results"] if r["code"] == "51")
+    assert elem51["setpoint_a"] == 5.0  # from ratings.relay_elements[].pickup_a
+
+
+def test_sel_injection_pickup_explicit_overrides_config():
+    test_def = _sel_test_def("secondary")
+    test_def["parameters"]["elements"][0]["pickup_a"] = 7.5
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_relay_config(),
+                       test_def=test_def, run_date=_today())
+    elem51 = next(r for r in rec["results"] if r["code"] == "51")
+    assert elem51["setpoint_a"] == 7.5
+
+
+def test_sel_injection_tcc_points_match_ieee_curve():
+    from src.instruments.doble_f6150 import ieee_c37_112_curve_seconds
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_relay_config(),
+                       test_def=_sel_test_def("secondary"),
+                       run_date=_today())
+    elem51 = next(r for r in rec["results"] if r["code"] == "51")
+    for p in elem51["tcc_points"]:
+        expected = ieee_c37_112_curve_seconds(
+            "ieee_very_inverse", 2.5, p["multiple"])
+        assert abs(p["expected_s"] - expected) < 1e-3
+
+
+def test_sel_injection_current_a_is_pickup_times_multiple():
+    rec = execute_test(device_id="sel-mv-main-A",
+                       config=_sel_relay_config(),
+                       test_def=_sel_test_def("secondary"),
+                       run_date=_today())
+    elem51 = next(r for r in rec["results"] if r["code"] == "51")
+    points = {p["multiple"]: p["current_a"] for p in elem51["tcc_points"]}
+    # 5.0 A pickup
+    assert points[2.0] == 10.0
+    assert points[5.0] == 25.0
+    assert points[10.0] == 50.0
+
+
+# ---------------------------------------------------------------------------
 # Manual sign-offs + dispatch errors
 # ---------------------------------------------------------------------------
 

@@ -181,6 +181,26 @@ def busway_panel(device_id: str, store: EvidenceStore) -> dict:
     }
 
 
+def relay_panel(device_id: str, store: EvidenceStore) -> dict:
+    """Aggregate the two protective-relay tests (secondary + primary
+    injection). Either or both may be absent if a particular bay only
+    requires one. Returns the latest of each plus a combined verdict.
+    """
+    sec_runs  = store.list_runs(device_id, "sel_secondary_injection")
+    prim_runs = store.list_runs(device_id, "sel_primary_injection")
+    if not (sec_runs or prim_runs):
+        return _no_prior_run(device_id, "relay", "sel_secondary_injection")
+    latest_sec  = sec_runs[-1]  if sec_runs  else None
+    latest_prim = prim_runs[-1] if prim_runs else None
+    primary = latest_sec or latest_prim
+    panel = dict(primary)
+    panel["secondary_injection"] = latest_sec
+    panel["primary_injection"]   = latest_prim
+    if latest_sec and latest_prim:
+        panel["passed"] = bool(latest_sec.get("passed")) and bool(latest_prim.get("passed"))
+    return panel
+
+
 _CATEGORY_DISPATCH = {
     "cable": cable_panel,
     "transformer": transformer_panel,
@@ -188,6 +208,7 @@ _CATEGORY_DISPATCH = {
     "ups": ups_panel,
     "ats": ats_panel,
     "busway": busway_panel,
+    "relay": relay_panel,
 }
 
 

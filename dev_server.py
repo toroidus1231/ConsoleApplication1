@@ -625,6 +625,24 @@ def _device_lineup(today: datetime) -> list[dict]:
                        "weak_cell_ids": [55, 121, 200]}},
         {"device_id": "abb-zs1-mv-A", "device_type_slug": "abb-zs1-15kv",
          "overrides": {"install_year": 2024}},
+        # Protective relays — SEL-751 on every MV breaker + LV main.
+        # Functional injection runs through the Doble F6150 driver
+        # against IEEE C37.112-2018 inverse-time curves; one Config
+        # Context here covers every instance.
+        {"device_id": "sel-mv-main-A", "device_type_slug": "sel-751",
+         "overrides": {"install_year": 2022, "install_month": 4}},
+        {"device_id": "sel-mv-main-B", "device_type_slug": "sel-751",
+         "overrides": {"install_year": 2022, "install_month": 4}},
+        {"device_id": "sel-mv-tie",    "device_type_slug": "sel-751",
+         "overrides": {"install_year": 2022, "install_month": 4}},
+        {"device_id": "sel-inc-A1",    "device_type_slug": "sel-751",
+         "overrides": {"install_year": 2022, "install_month": 6}},
+        {"device_id": "sel-inc-A2",    "device_type_slug": "sel-751",
+         "overrides": {"install_year": 2022, "install_month": 6}},
+        {"device_id": "sel-inc-B1",    "device_type_slug": "sel-751",
+         "overrides": {"install_year": 2022, "install_month": 6}},
+        {"device_id": "sel-inc-B2",    "device_type_slug": "sel-751",
+         "overrides": {"install_year": 2022, "install_month": 6}},
     ]
 
 
