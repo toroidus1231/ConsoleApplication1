@@ -118,8 +118,14 @@ def _osc(t: float, period: float, amp: float, base: float) -> float:
     return base + amp * math.sin(2 * math.pi * t / period)
 
 
-def live_telemetry(devices, runs, now_t: float | None = None) -> FacilityTelemetry:
-    """Generate one snapshot of live telemetry for the current twin state."""
+def live_telemetry(devices, runs, now_t: float | None = None,
+                   registry=None) -> FacilityTelemetry:
+    """Generate one snapshot of live telemetry for the current twin state.
+
+    `registry` is an optional EquipmentRegistry. When supplied, transformer
+    gas readings come from `transformer._gas_levels(spec, today)` so live
+    values agree with the EvidenceStore record's most recent DGA sample
+    (same spec evaluated at the same date)."""
     t = now_t if now_t is not None else time.time()
     iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
     snap = FacilityTelemetry(timestamp=iso)
@@ -220,22 +226,28 @@ def live_telemetry(devices, runs, now_t: float | None = None) -> FacilityTelemet
             last_trip_at=last_trip_at, sync_check_ok=True,
         )
 
-    # Transformers
+    # Transformers — gases pulled from the per-XFMR spec evaluated at
+    # `today` so the live tile values agree with the EvidenceStore's
+    # most recent DGA sample for the same transformer.
+    from datetime import datetime as _dt
+    xfmr_specs = (registry.transformers if registry else {}) or {}
     for d in devices:
         if not d.device_id.startswith("xfmr-"):
             continue
-        # XFMR-A1 has elevated acetylene per the seeded punch-list finding.
-        if d.device_id == "xfmr-A1":
-            c2h2 = 3.4
-            h2 = 124.0
+        spec = xfmr_specs.get(d.device_id)
+        if spec is not None:
+            from src.equipment_models.transformer import _gas_levels
+            gases = _gas_levels(spec, _dt.utcnow())
+            c2h2, h2, ch4 = gases["c2h2"], gases["h2"], gases["ch4"]
         else:
             c2h2 = _osc(t + hash(d.device_id), 51, 0.2, 0.8)
             h2 = _osc(t, 47, 8, 35)
+            ch4 = _osc(t, 53, 4, 18)
         snap.xfmrs[d.device_id] = XfmrReadings(
             winding_temp_c=_osc(t + hash(d.device_id) % 9, 31, 4, 68),
             oil_temp_c=_osc(t + hash(d.device_id) % 5, 41, 3, 52),
             h2_ppm=h2,
-            ch4_ppm=_osc(t, 53, 4, 18),
+            ch4_ppm=ch4,
             c2h2_ppm=c2h2,
             moisture_ppm=_osc(t, 67, 1.5, 8.4),
             pd_magnitude_pc=_osc(t + hash(d.device_id), 31, 12, 26),

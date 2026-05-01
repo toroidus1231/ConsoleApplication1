@@ -19,7 +19,12 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.server import Deps, create_app, fanout_loop
 from src.attestation import AttestationEngine
+from src.equipment_models.ats import ATSSpec, ats_run_record
 from src.equipment_models.cable import CableSpec, hipot_run_record
+from src.equipment_models.generator import GeneratorSpec, generator_run_record
+from src.equipment_models.transformer import TransformerSpec, transformer_run_record
+from src.equipment_models.ups import UPSSpec, ups_run_record
+from src.equipment_registry import EquipmentRegistry
 from src.equipment_views import build_panel as build_equipment_panel
 from src.evidence_store import InMemoryEvidenceStore
 from src.orchestrator import Orchestrator, build_power_graph_from_connections
@@ -35,12 +40,6 @@ from simulator.sim import (
     UPSSimulator,
 )
 from simulator.telemetry import live_telemetry, push_soe, telemetry_to_dict
-from simulator.equipment_records import (
-    ats_record,
-    generator_record,
-    transformer_record,
-    ups_record,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -431,26 +430,13 @@ def _build_bridge(simulator):
 # ---------------------------------------------------------------------------
 
 
-def _seed_hipot_runs(store, devices):
-    """Generate a chronological series of hipot runs for every breaker
-    that has an associated MV/LV cable, all derived from a single
-    CableSpec per cable + a deterministic ageing model. Both current
-    peak and historical peaks therefore lie on one degradation curve.
+def _build_equipment_registry(today: datetime) -> EquipmentRegistry:
+    """One source of truth for every equipment spec. Both the EvidenceStore
+    seeds and the live-telemetry generator pull from this registry."""
+    reg = EquipmentRegistry()
 
-    In production these records arrive via test_engine.execute() writing
-    its TestResult evidence to the store. The shape and the API path are
-    identical."""
-    breaker_slugs = {
-        "schneider-gma-1200a",   # MV 1200A
-        "schneider-mtz-1200a",   # LV incomer 1200A (some sites)
-        "schneider-mtz-4000a",   # LV incomer 4000A
-    }
-    # Per-cable spec. In production these values come from the cable
-    # schedule (length, jacket, install date). The (initial_megohm,
-    # aging_per_year) pair is sized so leakage at rated test voltage
-    # lands in the 0.05–0.15 mA band — visible on the chart, well below
-    # the IEEE 400.2 0.5 mA trip threshold.
-    cables_by_install_year = {
+    # Cables — feeders behind each MV/LV breaker
+    cable_cfg = {
         "mv-main-A":  (13.8, 2017, 220.0, 0.045),
         "mv-main-B":  (13.8, 2017, 220.0, 0.045),
         "mv-tie":     (13.8, 2017, 220.0, 0.045),
@@ -459,48 +445,75 @@ def _seed_hipot_runs(store, devices):
         "mtz-inc-B1": (0.48, 2021, 380.0, 0.030),
         "mtz-inc-B2": (0.48, 2021, 380.0, 0.030),
     }
-    today = datetime(2026, 5, 1)
-    for d in devices:
-        if d.device_type_slug not in breaker_slugs:
-            continue
-        cable_id = d.device_id
-        if cable_id not in cables_by_install_year:
-            continue
-        rated_kv, install_year, initial_megohm, age = cables_by_install_year[cable_id]
-        spec = CableSpec(
-            cable_id=cable_id,
-            rated_kv=rated_kv,
-            install_year=install_year,
-            initial_megohm=initial_megohm,
-            aging_per_year=age,
-        )
-        # Three historical runs (acceptance, 6-month, 3-month) plus today.
+    for cable_id, (kv, year, m_ohm, age) in cable_cfg.items():
+        reg.cables[cable_id] = CableSpec(cable_id=cable_id, rated_kv=kv,
+                                         install_year=year,
+                                         initial_megohm=m_ohm,
+                                         aging_per_year=age)
+
+    # Transformers — XFMR-A1 has an emerging arcing fault
+    reg.transformers["xfmr-A1"] = TransformerSpec(
+        xfmr_id="xfmr-A1", install_year=2018,
+        fault_state="active_arcing", fault_severity=1.1,
+        fault_onset=today - timedelta(days=110))
+    for xid in ("xfmr-A2", "xfmr-B1", "xfmr-B2"):
+        reg.transformers[xid] = TransformerSpec(xfmr_id=xid, install_year=2018)
+
+    # Generators
+    reg.generators["gen-1"] = GeneratorSpec(gen_id="gen-1", install_year=2020,
+                                            annual_runtime_hours=85)
+    reg.generators["gen-2"] = GeneratorSpec(gen_id="gen-2", install_year=2020,
+                                            annual_runtime_hours=82)
+
+    # UPSes — stable per-UPS weak cell IDs
+    reg.upses["ups-A"] = UPSSpec(ups_id="ups-A", install_year=2022,
+                                 install_month=4, weak_cell_ids=[17, 142, 199])
+    reg.upses["ups-B"] = UPSSpec(ups_id="ups-B", install_year=2022,
+                                 install_month=4, weak_cell_ids=[34, 88, 211])
+
+    # ATS units cross-reference gen + downstream UPSes
+    for ats_id in ("ats-1", "ats-2"):
+        reg.ats_units[ats_id] = ATSSpec(
+            ats_id=ats_id,
+            upstream_gen=reg.generators["gen-1"],
+            downstream_ups=[reg.upses["ups-A"], reg.upses["ups-B"]])
+
+    return reg
+
+
+def _seed_evidence_store(store, registry: EquipmentRegistry, today: datetime):
+    """Walk the registry and write historical runs into the store. Each
+    series is the same per-device spec evaluated at past run dates so
+    every panel's history is internally consistent."""
+    for cable_id, spec in registry.cables.items():
         for days_ago in (540, 180, 90, 1):
-            run_date = today - timedelta(days=days_ago)
-            record = hipot_run_record(spec, run_date)
-            store.put(cable_id, "cable_hipot", record)
+            store.put(cable_id, "cable_hipot",
+                      hipot_run_record(spec, today - timedelta(days=days_ago)))
+    for xfmr_id, spec in registry.transformers.items():
+        for days_ago in (180, 90, 30, 0):
+            store.put(xfmr_id, "transformer_commissioning",
+                      transformer_run_record(spec, today - timedelta(days=days_ago)))
+    for gen_id, spec in registry.generators.items():
+        for days_ago in (365, 180, 90, 0):
+            store.put(gen_id, "generator_loadbank",
+                      generator_run_record(spec, today - timedelta(days=days_ago)))
+    for ups_id, spec in registry.upses.items():
+        for days_ago in (180, 90, 30, 1):
+            store.put(ups_id, "ups_battery_transfer",
+                      ups_run_record(spec, today - timedelta(days=days_ago)))
+    for ats_id, spec in registry.ats_units.items():
+        for days_ago in (180, 90, 30, 0):
+            store.put(ats_id, "ats_transfer",
+                      ats_run_record(spec, today - timedelta(days=days_ago)))
 
 
 def _equipment_provider(evidence_store):
-    """Returns a function (kind, device_id) -> dict.
-
-    Hipot reads from the EvidenceStore (the platform-correct path: the
-    test engine writes records there, the API reads them back). Other
-    equipment kinds still fall through to legacy demo fixtures and will
-    be migrated to the same path in subsequent commits."""
+    """Returns a function (kind, device_id) -> dict that always reads
+    through the EvidenceStore. Every panel is now a view of records the
+    test engine wrote (or, in demo, that the dev seed wrote through the
+    same store interface)."""
     def provider(kind: str, device_id: str) -> dict:
-        if kind in ("xfmr", "transformer"):
-            c2h2_now = 3.4 if device_id == "xfmr-A1" else 0.8
-            return transformer_record(device_id, c2h2_now)
-        if kind in ("gen", "generator"):
-            return generator_record(device_id)
-        if kind == "ups":
-            return ups_record(device_id)
-        if kind in ("cable", "hipot"):
-            return build_equipment_panel(kind, device_id, evidence_store)
-        if kind == "ats":
-            return ats_record(device_id)
-        raise KeyError(f"unknown equipment kind: {kind}")
+        return build_equipment_panel(kind, device_id, evidence_store)
     return provider
 
 
@@ -526,11 +539,14 @@ async def main():
     devices, runs = build_facility()
     graph = power_graph(devices)
 
-    # Evidence store: every commissioning panel reads from here. The
-    # seed below populates it with deterministic cable-hipot runs the
-    # real platform would have written via test_engine.execute().
+    # Equipment registry: per-device specs driving every panel.
+    # Live telemetry and the EvidenceStore both read from the same
+    # registry so today's reading on a tile == today's DGA-history
+    # tail value == today's run record, by construction.
+    today = datetime(2026, 5, 1)
+    registry = _build_equipment_registry(today)
     evidence_store = InMemoryEvidenceStore()
-    _seed_hipot_runs(evidence_store, devices)
+    _seed_evidence_store(evidence_store, registry, today)
 
     attest = AttestationEngine(
         facility_name=config.facility_name,
@@ -625,7 +641,8 @@ async def main():
                 ],
             }
         },
-        telemetry_provider=lambda: telemetry_to_dict(live_telemetry(devices, runs)),
+        telemetry_provider=lambda: telemetry_to_dict(
+            live_telemetry(devices, runs, registry=registry)),
         equipment_provider=_equipment_provider(evidence_store),
     )
     app = create_app(deps)
