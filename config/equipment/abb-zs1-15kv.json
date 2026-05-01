@@ -1,0 +1,94 @@
+{
+  "device_type_slug": "abb-zs1-15kv",
+  "manufacturer": "ABB",
+  "model": "ZS1 15 kV Air-Insulated Switchgear",
+  "category": "transformer",
+  "_note": "Modeled with the transformer category for now since ZS1 acceptance includes IR + hipot + DGA-on-CT-oil tests; a dedicated 'switchgear' category aggregator would be added in equipment_views if desired",
+  "ratings": {
+    "rated_kva": 0,
+    "primary_kv": 15.0,
+    "secondary_v": 15000.0,
+    "vector_group": "n/a — switchgear, not transformer"
+  },
+  "ageing_model": {
+    "kind": "transformer_oil_paper",
+    "params": {
+      "install_year": 2024,
+      "fault_state": "healthy",
+      "initial_pi_megohm": 1500.0
+    }
+  },
+  "active_tests": [
+    {
+      "name": "transformer_turns_ratio",
+      "type": "transformer_turns_ratio",
+      "spec_reference": "IEEE C57.13.5 (instrument transformer ratio)",
+      "instrument": {"vendor": "Megger", "model": "TTR330",
+                     "serial": "SN-TTR-9921",
+                     "cal_cert": "sha256:megger-ttr330-2026-q1"},
+      "parameters": {"taps": [0], "phases": ["A", "B", "C"]},
+      "acceptance": {"max_deviation_pct": 0.5}
+    },
+    {
+      "name": "polarization_index",
+      "type": "polarization_index",
+      "spec_reference": "IEEE 43-2013 (≥ 2.0 for class A insulation)",
+      "instrument": {"vendor": "Megger", "model": "MIT525",
+                     "serial": "SN-MIT-78421",
+                     "cal_cert": "sha256:megger-mit525-2026-q1"},
+      "parameters": {"test_voltage_v": 5000, "duration_minutes": 10},
+      "acceptance": {"min_pi": 2.0}
+    },
+    {
+      "name": "transformer_hipot",
+      "type": "transformer_hipot_history",
+      "spec_reference": "ANSI C37.20.2 / NETA §7.5 (15 kV class)",
+      "instrument": {"vendor": "Vitrek", "model": "95X",
+                     "serial": "SN-VTK-95X-12345",
+                     "cal_cert": "sha256:vitrek-95x-2026-q2"},
+      "parameters": {"test_factor": 0.8, "duration_seconds": 60},
+      "acceptance": {"max_leakage_ma": 0.5}
+    }
+  ],
+  "manual_signoffs": [],
+  "panel": {
+    "header": {
+      "title_template": "Switchgear · {device_id}",
+      "crumb_template": "{manufacturer} {model} · ANSI C37.20.2 acceptance",
+      "status_field": "passed",
+      "status_labels": {"true": "ACCEPTED", "false": "DEFICIENCY"}
+    },
+    "tiles": [
+      {"label": "Manufacturer", "value_field": "manufacturer"},
+      {"label": "Model", "value_field": "model"},
+      {"label": "Voltage class", "value_template": "15 kV"},
+      {"label": "PI", "value_field": "polarization_index.value", "format": "{:.2f}",
+       "color_field": "polarization_index.passed",
+       "color_labels": {"true": "var(--pass)", "false": "var(--fail)"}}
+    ],
+    "cards": [
+      {"kind": "table",
+       "title": "Instrument-transformer ratio (IEEE C57.13.5)",
+       "data_path": "ttr",
+       "columns": [
+         {"label": "Phase", "field": "phase", "mono": true},
+         {"label": "Expected", "field": "expected", "format": "{:.4f}", "mono": true},
+         {"label": "Measured", "field": "measured", "format": "{:.4f}", "mono": true},
+         {"label": "Deviation", "field": "deviation_pct", "format": "{:.3f} %", "mono": true},
+         {"label": "Status", "kind": "badge", "field": "passed",
+          "labels": {"true": "passed", "false": "failed"}}
+       ]},
+      {"kind": "pi_curve", "data_path": "polarization_index"},
+      {"kind": "table",
+       "title": "Hipot history (NETA §7.5)",
+       "data_path": "hipot_history",
+       "columns": [
+         {"label": "Days ago", "field": "date_offset_days", "mono": true},
+         {"label": "Voltage", "field": "voltage_kv", "format": "{:.2f} kV", "mono": true},
+         {"label": "Leakage", "field": "leakage_ma", "format": "{:.3f} mA", "mono": true},
+         {"label": "Status", "kind": "badge", "field": "passed",
+          "labels": {"true": "passed", "false": "failed"}}
+       ]}
+    ]
+  }
+}

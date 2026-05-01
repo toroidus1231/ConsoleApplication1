@@ -618,6 +618,21 @@ def _device_lineup(today: datetime) -> list[dict]:
          "overrides": {"install_year": 2023, "install_month": 2, "length_m": 24.0,
                        "initial_megohm": 4_000.0, "aging_per_year": 0.020,
                        "initial_joint_uohm": 22.0, "joint_aging_per_year": 0.012}},
+        # New product families demonstrating config-only addition.
+        # No Python touched to support these — only JSON drops in
+        # config/equipment/.
+        {"device_id": "mtg-1000v-feed", "device_type_slug": "vertiv-mtg-6300a",
+         "overrides": {"install_year": 2024, "install_month": 1, "length_m": 60.0,
+                       "initial_megohm": 9500.0, "aging_per_year": 0.025,
+                       "initial_joint_uohm": 14.0, "joint_aging_per_year": 0.012}},
+        {"device_id": "ups-galaxy-1", "device_type_slug": "schneider-galaxy-vl",
+         "overrides": {"install_year": 2024, "install_month": 3,
+                       "weak_cell_ids": [42, 88]}},
+        {"device_id": "ups-eaton-9395-1", "device_type_slug": "eaton-9395",
+         "overrides": {"install_year": 2023, "install_month": 6,
+                       "weak_cell_ids": [55, 121, 200]}},
+        {"device_id": "abb-zs1-mv-A", "device_type_slug": "abb-zs1-15kv",
+         "overrides": {"install_year": 2024}},
     ]
 
 
