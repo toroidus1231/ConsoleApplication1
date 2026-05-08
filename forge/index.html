@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>The Forge — AI Data Center Digital Twin</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <canvas id="gl"></canvas>
+
+  <div id="bootSplash">
+    <div class="brand">
+      <div class="mark"></div>
+      <div class="word">THE FORGE</div>
+      <div class="sub">real-time 3D digital twin of an AI data center</div>
+    </div>
+    <div class="bootBar"><div class="bootFill"></div></div>
+    <div class="bootStatus">initializing renderer</div>
+  </div>
+
+  <header id="topbar">
+    <div class="logo">
+      <div class="mark"></div><span>THE FORGE</span>
+    </div>
+    <nav>
+      <button data-view="site"      class="active">Site</button>
+      <button data-view="build">Build</button>
+      <button data-view="dashboard" data-gated="1">Dashboard</button>
+      <button data-view="control"   data-gated="1">Control Room</button>
+    </nav>
+    <div class="meta">
+      <span id="metaSite">— select a site —</span>
+      <span id="metaPhase">phase 0</span>
+      <span id="metaPower">0.0 MW</span>
+    </div>
+  </header>
+
+  <aside id="sidebar">
+    <!-- panels rendered by ui.js -->
+  </aside>
+
+  <div id="hud">
+    <div class="hudCol">
+      <div class="hudKey">IT load</div>
+      <div class="hudVal" id="hudIt">0.00 MW</div>
+    </div>
+    <div class="hudCol">
+      <div class="hudKey">PUE</div>
+      <div class="hudVal" id="hudPue">—</div>
+    </div>
+    <div class="hudCol">
+      <div class="hudKey">BESS SoC</div>
+      <div class="hudVal" id="hudSoc">—</div>
+    </div>
+    <div class="hudCol">
+      <div class="hudKey">Cold aisle</div>
+      <div class="hudVal" id="hudTemp">—</div>
+    </div>
+    <div class="hudCol">
+      <div class="hudKey">Wall clock</div>
+      <div class="hudVal" id="hudClock">—</div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
