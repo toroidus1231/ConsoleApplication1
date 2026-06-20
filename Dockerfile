@@ -19,6 +19,7 @@ RUN pip install -r requirements.txt
 
 COPY src ./src
 COPY config ./config
+COPY simulator ./simulator
 
 # Frontend build is copied in by CI (or mounted in dev). Keep the mount point.
 RUN mkdir -p /app/frontend/build /app/data/wal

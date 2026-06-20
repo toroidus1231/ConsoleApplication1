@@ -130,3 +130,17 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+
+  # Digital twin (Module 22). Dev-only — enable with `docker compose --profile dev up`.
+  # Presents a writable UPS on port 5020 that responds to a battery-transfer test
+  # with a realistic output-voltage transient, so the platform can be exercised
+  # end-to-end without live facility hardware.
+  simulator:
+    build: .
+    profiles: ["dev"]
+    networks: [cx-net]
+    command: ["python", "-m", "simulator.sim"]
+    environment:
+      SIM_PROFILE: ups_transfer
+    ports:
+      - "5020:502"

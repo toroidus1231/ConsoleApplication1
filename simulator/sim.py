@@ -191,4 +191,6 @@ async def run_simulator(
 
 
 if __name__ == "__main__":
-    asyncio.run(run_simulator())
+    import os
+
+    asyncio.run(run_simulator(os.environ.get("SIM_PROFILE", "ups_transfer")))
