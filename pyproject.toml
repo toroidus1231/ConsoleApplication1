@@ -9,6 +9,7 @@ minversion = "8.0"
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 # Dataclasses like TestRequest/TestResult are domain types, not test cases.
 python_classes = "!Test*"
 filterwarnings = [
