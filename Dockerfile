@@ -1,4 +1,13 @@
-# Platform container — Python 3.12 slim with backend + frontend static assets.
+# ---- Frontend build stage (Modules 18-20) ----
+# Compiles the React app to static assets that the platform serves at /.
+FROM node:22-slim AS frontend-build
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# ---- Platform container — Python 3.12 slim with backend + built frontend ----
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -21,8 +30,9 @@ COPY src ./src
 COPY config ./config
 COPY simulator ./simulator
 
-# Frontend build is copied in by CI (or mounted in dev). Keep the mount point.
-RUN mkdir -p /app/frontend/build /app/data/wal
+# Built frontend assets from the build stage; served at / by the API (Module 21).
+RUN mkdir -p /app/data/wal
+COPY --from=frontend-build /frontend/build /app/frontend/build
 
 EXPOSE 8080
 
